@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MirNin Monitor — Documentation</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid-line: #e1e0d9; --ring: rgba(11,11,11,0.10);
+    --accent: #2a78d6; --accent-soft: rgba(42,120,214,0.10);
+    --good: #0ca30c; --good-text: #006300;
+    --warn: #fab219; --warn-text: #7a5200;
+    --crit: #d03b3b; --crit-text: #a32222;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19;
+      --ink: #fff; --ink-2: #c3c2b7;
+      --grid-line: #2c2c2a; --ring: rgba(255,255,255,0.10);
+      --accent: #3987e5; --accent-soft: rgba(57,135,229,0.16);
+      --good-text: #0ca30c; --warn-text: #fab219; --crit-text: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #fff; --ink-2: #c3c2b7;
+    --grid-line: #2c2c2a; --ring: rgba(255,255,255,0.10);
+    --accent: #3987e5; --accent-soft: rgba(57,135,229,0.16);
+    --good-text: #0ca30c; --warn-text: #fab219; --crit-text: #e66767;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid-line: #e1e0d9; --ring: rgba(11,11,11,0.10);
+    --accent: #2a78d6; --accent-soft: rgba(42,120,214,0.10);
+    --good-text: #006300; --warn-text: #7a5200; --crit-text: #a32222;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 15px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.92em; }
+
+  .layout { display: grid; grid-template-columns: 230px minmax(0, 76ch); gap: 40px;
+    max-width: 1100px; margin: 0 auto; padding: 36px 24px 90px; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } nav.toc { position: static; } }
+
+  nav.toc { position: sticky; top: 24px; align-self: start; font-size: 13.5px; }
+  nav.toc .toc-title { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--muted); font-weight: 650; margin-bottom: 10px; }
+  nav.toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 3px 0; }
+  nav.toc a:hover { color: var(--accent); }
+  nav.toc .lvl2 { padding-left: 14px; font-size: 13px; }
+  nav.toc .part { margin-top: 12px; font-weight: 650; color: var(--ink); }
+
+  h1 { font-size: 28px; letter-spacing: -0.015em; margin: 0 0 6px; line-height: 1.2; text-wrap: balance; }
+  .subtitle { color: var(--ink-2); margin: 0 0 30px; font-size: 16px; }
+  h2 { font-size: 21px; letter-spacing: -0.01em; margin: 46px 0 12px; padding-top: 18px;
+    border-top: 1px solid var(--grid-line); text-wrap: balance; }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  p, ul, ol { margin: 0 0 14px; }
+  li { margin: 4px 0; }
+  a { color: var(--accent); }
+  .part-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin: 52px 0 -36px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 0 0 16px; }
+  th { text-align: left; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--grid-line); }
+  td { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--grid-line); vertical-align: top; }
+  .table-scroll { overflow-x: auto; }
+
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em;
+    background: var(--accent-soft); border-radius: 4px; padding: 1px 5px; }
+  pre { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; margin: 0 0 16px; }
+  pre code { background: none; padding: 0; }
+
+  .callout { background: var(--surface); border: 1px solid var(--ring); border-left: 4px solid var(--accent);
+    border-radius: 10px; padding: 12px 16px; margin: 0 0 16px; font-size: 14px; }
+  .callout.warn { border-left-color: var(--warn); }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .pill .dot { width: 9px; height: 9px; flex: none; display: inline-block; }
+  .pill.up { color: var(--good-text); } .pill.up .dot { background: var(--good); border-radius: 50%; }
+  .pill.deg { color: var(--warn-text); } .pill.deg .dot { background: var(--warn); clip-path: polygon(50% 0,100% 100%,0 100%); }
+  .pill.down { color: var(--crit-text); } .pill.down .dot { background: var(--crit); border-radius: 2px; }
+  .pill.unk { color: var(--muted); } .pill.unk .dot { background: transparent; border: 2px solid var(--muted); border-radius: 50%; width: 6px; height: 6px; }
+
+  /* architecture diagram */
+  .arch { display: grid; gap: 10px; margin: 0 0 16px; font-size: 13px; }
+  .arch-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .arch-box { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
+    padding: 10px 12px; text-align: center; }
+  .arch-box b { display: block; font-size: 13.5px; }
+  .arch-box span { color: var(--ink-2); font-size: 12px; }
+  .arch-box.hub { border-color: var(--accent); background: var(--accent-soft); }
+  .arch-link { text-align: center; color: var(--muted); font-size: 12px; letter-spacing: 0.04em; }
+
+  .kbd-step { counter-increment: step; position: relative; padding-left: 34px; margin: 0 0 10px; }
+  .kbd-step::before { content: counter(step); position: absolute; left: 0; top: 1px;
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .steps { counter-reset: step; margin: 0 0 16px; }
+
+  .back-app { display: inline-block; margin-bottom: 22px; font-size: 13.5px; text-decoration: none;
+    border: 1px solid var(--ring); border-radius: 8px; padding: 5px 12px; color: var(--ink-2); }
+  .back-app:hover { border-color: var(--accent); color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <div class="toc-title">Contents</div>
+    <a class="part" href="#what">Part 1 · For everyone</a>
+    <a class="lvl2" href="#what">What is this?</a>
+    <a class="lvl2" href="#reading">Reading the dashboard</a>
+    <a class="lvl2" href="#statuses">The four statuses</a>
+    <a class="lvl2" href="#playbook">What to do when…</a>
+    <a class="part" href="#admin">Part 2 · For admins</a>
+    <a class="lvl2" href="#add-url">Adding a URL to watch</a>
+    <a class="lvl2" href="#locations">Countries &amp; providers</a>
+    <a class="lvl2" href="#focus">The focus view</a>
+    <a class="lvl2" href="#alerts">Alerts</a>
+    <a class="lvl2" href="#settings">Settings &amp; login</a>
+    <a class="part" href="#tech">Part 3 · Technical</a>
+    <a class="lvl2" href="#arch">Architecture</a>
+    <a class="lvl2" href="#data">Data &amp; storage</a>
+    <a class="lvl2" href="#api">API reference</a>
+    <a class="lvl2" href="#deploy">Deployment</a>
+    <a class="lvl2" href="#glossary">Glossary</a>
+  </nav>
+
+  <main>
+    <a class="back-app" href="/">← Back to the dashboard</a>
+    <h1>MirNin Monitor — Documentation</h1>
+    <p class="subtitle">One page for everyone: what the monitor is, how to read it,
+    how to run it, and how it works under the hood.</p>
+
+    <div class="part-label" id="part1">Part 1 · For everyone</div>
+
+    <h2 id="what">What is this?</h2>
+    <p>MirNin Monitor answers one question, continuously:
+    <strong>“Is our platform working right now, for people in the countries we serve?”</strong></p>
+    <p>A website can be perfectly fine in Tbilisi and broken in São Paulo — or, more subtly,
+    fine on one Georgian internet provider and blocked on another. The monitor checks our
+    URLs every few minutes <em>from real machines in those countries and networks</em>, and
+    shows the results as a wall of live tiles — like participants in a video call, one tile
+    per country. Green wall = all good. Anything else tells you exactly where and what.</p>
+    <p>You don't need an account or any technical knowledge to read it. If the dashboard asks
+    for a password, ask the admin who runs it.</p>
+
+    <h2 id="reading">Reading the dashboard</h2>
+    <ul>
+      <li><strong>Tabs across the top</strong> — one tab per thing we monitor (“target”), e.g.
+      the main site, the payments API. The colored dot on each tab is the target's worst
+      current status, so a problem is visible before you even open the tab. <strong>Overview</strong>
+      shows every target as one summary tile.</li>
+      <li><strong>Summary strip</strong> — how many probes are green / yellow / red right now,
+      and the median response time.</li>
+      <li><strong>Tiles</strong> — each tile is one location watching one URL: country flag and
+      name (plus provider, if pinned), the latest response time in milliseconds, a status
+      label, a small graph of recent checks, uptime for the last 24 hours, and the time of
+      the last check. Red or yellow tiles also show the error in plain text.</li>
+      <li><strong>Yellow banner “Suspected ISP-level block”</strong> — providers inside one
+      country disagree: e.g. Magti users can't reach us while Silknet users can. This is a
+      strong, specific signal — see the playbook below.</li>
+      <li><strong>Recent incidents</strong> (bottom of each target tab) — outages as a story:
+      when each started, how long it lasted, which location, what failed.</li>
+      <li><strong>Click any tile</strong> to pin it large (like pinning a speaker in a call):
+      full history graph, a week-at-a-glance heatmap, recent checks, and — during an outage —
+      the automatic diagnosis.</li>
+      <li><strong>Grid / List</strong> switch (top right) — the same data as tiles or as a
+      dense table.</li>
+    </ul>
+
+    <h2 id="statuses">The four statuses</h2>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Status</th><th>Meaning</th><th>Gut reaction</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill up"><span class="dot"></span>Operational</span></td>
+          <td>The site answered normally and fast enough.</td>
+          <td>All good.</td></tr>
+        <tr><td><span class="pill deg"><span class="dot"></span>Degraded</span></td>
+          <td>The site answered, but slowly or with a client error — users there are having
+          a worse experience than usual.</td>
+          <td>Keep an eye on it; escalate if it persists.</td></tr>
+        <tr><td><span class="pill down"><span class="dot"></span>Down</span></td>
+          <td>No usable answer: timeout, connection failure, server error — or the page came
+          back <em>without our expected content</em> (typically a block page pretending to be us).</td>
+          <td>Real problem for users in that location. Act.</td></tr>
+        <tr><td><span class="pill unk"><span class="dot"></span>No data</span></td>
+          <td>The <em>check itself</em> couldn't run (probe network unavailable). We don't know
+          the site's state from that location.</td>
+          <td>Not evidence of an outage — but also not proof of health.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout">“No data” is deliberately different from “Down”. <em>We couldn't look</em>
+    is not the same as <em>the site is broken</em> — the monitor never guesses.</div>
+
+    <h2 id="playbook">What to do when…</h2>
+    <ul>
+      <li><strong>One country is red, the rest are green</strong> — a regional problem: routing,
+      a CDN edge, or geo-blocking. Open the tile: the diagnosis says whether it's DNS, the
+      network path, or the website itself. Share that screenshot with engineering.</li>
+      <li><strong>One provider is red inside a green country</strong> (the “ISP split” banner) —
+      users on that provider (e.g. Magti) can't reach us while others can. The pinned tile's
+      diagnosis usually shows the pattern “DNS fine, ping dropped, content intercepted”, which
+      is evidence of in-network filtering — exactly what you need when contacting the ISP or
+      the regulator.</li>
+      <li><strong>Everything is red at once</strong> — either the platform itself is down
+      (check with engineering first) or, if statuses read “No data”, the monitor lost its probe
+      network — an admin should check the Settings and the notice in the header.</li>
+      <li><strong>A tile is yellow with a high ms number</strong> — slow, not broken. If it's
+      one distant country and it's business-critical there, that's a case for a CDN/edge
+      conversation, backed by the p95 numbers in the pinned view.</li>
+      <li><strong>“cert expires in N d” badge</strong> — our security certificate is about to
+      expire; if it does, browsers will scare users away. Tell engineering — it's a
+      ten-minute fix <em>before</em> the deadline and an outage after it.</li>
+    </ul>
+
+    <div class="part-label" id="part2">Part 2 · For admins</div>
+
+    <h2 id="add-url">Adding a URL to watch</h2>
+    <div class="steps">
+      <p class="kbd-step">Click <strong>+ Add URL</strong> (top right).</p>
+      <p class="kbd-step">Give it a name people recognize (“Main site”, “Payments API”) and the
+      exact URL — a lightweight page like <code>/health</code> is ideal, but any page works.</p>
+      <p class="kbd-step">Pick how often to check. 1–5 minutes is right for most things;
+      every 30 s only for the truly critical (and mind probe-network rate limits).</p>
+      <p class="kbd-step">Choose locations — see the next section.</p>
+      <p class="kbd-step">Optionally set <strong>Expect text</strong>: a word or phrase that is
+      always on the real page (e.g. the product name). If a response comes back without it, the
+      check counts as Down even when the status code looks fine — this is what unmasks ISP
+      block pages that return a fake “successful” page.</p>
+      <p class="kbd-step">Save. Checks start within seconds; the tab appears immediately.</p>
+    </div>
+    <p>Each target tab has <strong>Check now</strong> (run immediately), <strong>Pause/Resume</strong>,
+    and <strong>Edit</strong> (which also contains Delete).</p>
+
+    <h2 id="locations">Countries &amp; providers</h2>
+    <p>A location is a <strong>country</strong>, optionally pinned to a
+    <strong>provider</strong> (ISP). Three patterns:</p>
+    <ul>
+      <li><strong>Country only</strong> (“Germany · any provider”) — a probe somewhere in that
+      country. The default, right for most countries.</li>
+      <li><strong>Country + provider</strong> — add the same country several times with
+      different providers (Georgia · Magti, Georgia · Silknet) to detect provider-level blocks.
+      When you focus the provider field, the form shows which providers currently have live
+      probes in that country — pick from those chips rather than guessing.</li>
+      <li><strong>This server</strong> — checks run directly from the machine hosting the
+      monitor. Works for internal URLs the public probe network can't reach.</li>
+    </ul>
+    <div class="callout warn">Probe availability is live, not guaranteed: providers appear in
+    the hint only while someone hosts a probe there. If a pinned provider has no probe online,
+    its tile shows “No data” until one returns.</div>
+
+    <h2 id="focus">The focus view</h2>
+    <p>Click a tile to pin it. Beyond the big graph you get:</p>
+    <ul>
+      <li><strong>Time ranges</strong> — 1 h / 6 h / 24 h use raw checks; 7 d / 30 d switch to
+      hourly aggregates. Uptime for 24 h and 30 d is shown alongside.</li>
+      <li><strong>Latency anatomy</strong> — the colored bar splits the last response into
+      DNS → Connect → TLS → First byte → Download. A slow “First byte” is our server thinking;
+      slow “Connect/TLS” is network distance; slow “DNS” is name resolution.</li>
+      <li><strong>Week heatmap</strong> — 7 days × 24 hours; spot patterns like “degrades every
+      evening at peak time”.</li>
+      <li><strong>Automatic diagnosis</strong> — when a location goes down, the monitor
+      immediately runs ping + DNS from that same location and writes a verdict, e.g.
+      <em>“DNS is clean but the network path drops traffic — points at routing or in-network
+      filtering, not your server.”</em></li>
+      <li><strong>Served by</strong> — which CDN edge answered, response size, redirects, and
+      days until the TLS certificate expires.</li>
+    </ul>
+
+    <h2 id="alerts">Alerts</h2>
+    <p>Configure once in <strong>Settings</strong>: paste a webhook URL (a Slack incoming
+    webhook works as-is), choose how many consecutive failures trigger an alert (default 2 — a
+    single blip stays quiet), and press <strong>Send test alert</strong> to confirm delivery.</p>
+    <p>Then the monitor messages you like this:</p>
+    <pre><code>🔴 MirNin platform is DOWN from GE · MagtiCom — expected content not
+   found in response (3 consecutive checks, since 12:36)
+   Diagnosis: DNS resolves correctly but ICMP is dropped and HTTP is
+   intercepted — consistent with in-network filtering.
+
+🟢 Recovered: MirNin platform from GE · MagtiCom after 41 m.</code></pre>
+    <p>Down-alerts include the diagnosis when it's ready; recovery messages include the outage
+    duration. Alerts can be disabled globally with one checkbox.</p>
+
+    <h2 id="settings">Settings &amp; login</h2>
+    <ul>
+      <li><strong>Password</strong> — the deployment sets <code>ADMIN_PASSWORD</code>; everyone
+      then signs in with it (sessions last 7 days). Without it the dashboard is open and shows
+      an “Unprotected” notice — acceptable on a laptop, not on a server.</li>
+      <li><strong>Globalping token</strong> — Settings → paste the API token from
+      <a href="https://globalping.io">globalping.io</a> (free account). It raises the checks-per-hour
+      limit substantially; sponsoring the project adds credits beyond that. Without a token,
+      heavy schedules can hit rate limits and tiles temporarily show “No data”.</li>
+      <li><strong>Probes selector</strong> (header) — “Real” uses the live probe network;
+      “Simulated” generates synthetic results so you can demo or explore the UI without
+      network access. Simulated data is clearly marked and never mixes into real history
+      unnoticed — switch back to Real for actual monitoring.</li>
+    </ul>
+
+    <div class="part-label" id="part3">Part 3 · Technical</div>
+
+    <h2 id="arch">Architecture</h2>
+    <p>A single zero-dependency Node.js process (≥ 18.17) serves the dashboard, runs the
+    scheduler, talks to probe providers, and persists everything as JSON. No database server,
+    no build step, no npm packages.</p>
+    <div class="arch">
+      <div class="arch-row">
+        <div class="arch-box"><b>Browser dashboard</b><span>public/ · vanilla JS, no framework</span></div>
+      </div>
+      <div class="arch-link">REST + Server-Sent Events (live updates) ↕</div>
+      <div class="arch-row">
+        <div class="arch-box hub"><b>server.js</b><span>HTTP · auth · API · SSE · static</span></div>
+      </div>
+      <div class="arch-row">
+        <div class="arch-box"><b>scheduler.js</b><span>per-target intervals, no overlap, incident tracking triggers</span></div>
+        <div class="arch-box"><b>checker.js</b><span>providers, classification, diagnostics</span></div>
+        <div class="arch-box"><b>store.js</b><span>config, raw results, rollups, incidents</span></div>
+        <div class="arch-box"><b>alerts.js</b><span>webhook down/recovery messages</span></div>
+      </div>
+      <div class="arch-link">outbound only ↓</div>
+      <div class="arch-row">
+        <div class="arch-box"><b>Globalping API</b><span>real probes per country/ISP: http, ping, dns</span></div>
+        <div class="arch-box"><b>Local checks</b><span>node:http(s) from this machine, phase timings</span></div>
+        <div class="arch-box"><b>Simulated</b><span>synthetic provider for demos</span></div>
+        <div class="arch-box"><b>Alert webhook</b><span>Slack-compatible {"text"} POST</span></div>
+      </div>
+    </div>
+    <p><strong>Check lifecycle:</strong> the scheduler ticks every second; a due target fans out
+    to all its locations (one Globalping measurement covers all remote locations; local
+    locations are fetched directly with per-phase socket timing). Each result is classified
+    (<span class="mono">up / degraded / down / unknown</span>), appended to raw history, folded
+    into the current hourly rollup, and evaluated against incidents: a transition to down opens
+    an incident and fires ping + DNS diagnostics from the same location; recovery closes it.
+    Every result is broadcast over SSE so open dashboards update without polling. Alerts fire
+    when an incident reaches the configured consecutive-failure threshold, and again on
+    recovery.</p>
+    <p><strong>Status classification:</strong> network failure, timeout, HTTP 5xx, or a failed
+    content assertion → <em>down</em>; HTTP 4xx or latency above the target's threshold →
+    <em>degraded</em>; a check that could not run (probe network unreachable, no probe in the
+    pinned network) → <em>unknown</em>, excluded from uptime math.</p>
+    <p><strong>Security model:</strong> optional password gate over everything except
+    <span class="mono">/api/healthz</span> and the static files; sessions are HMAC-signed
+    expiry cookies (secret generated once, stored under <span class="mono">data/</span> with
+    mode 600); the Globalping token is stored server-side and echoed to the UI only masked;
+    all user strings are HTML-escaped in the frontend.</p>
+
+    <h2 id="data">Data &amp; storage</h2>
+    <div class="table-scroll"><table>
+      <thead><tr><th>File</th><th>Contents</th><th>Retention</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">data/config.json</td><td>Targets, locations, settings (v1 configs migrate automatically)</td><td>forever</td></tr>
+        <tr><td class="mono">data/results.json</td><td>Raw check entries per target × location (status, ms, phase timings, size, cert days, edge, content flag)</td><td>~48 h</td></tr>
+        <tr><td class="mono">data/rollups.json</td><td>Hourly aggregates: status counts, latency sum, p50/p95</td><td>90 days</td></tr>
+        <tr><td class="mono">data/incidents.json</td><td>Outages: start/end, checks, error, diagnosis, alert state</td><td>90 days</td></tr>
+      </tbody>
+    </table></div>
+    <p>Everything flushes to disk every 30 s and on shutdown; the process recovers its full
+    state on restart. Uptime is computed from rollups as the share of non-down checks among
+    known checks (unknown excluded from the denominator).</p>
+
+    <h2 id="api">API reference</h2>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">GET /api/healthz</td><td>Liveness for external watchdogs (no auth)</td></tr>
+        <tr><td class="mono">POST /api/login · /api/logout</td><td>Session management when <span class="mono">ADMIN_PASSWORD</span> is set</td></tr>
+        <tr><td class="mono">GET /api/state</td><td>Full snapshot: targets, recent history, uptimes, incidents</td></tr>
+        <tr><td class="mono">GET /api/events</td><td>SSE stream: <span class="mono">result</span>, <span class="mono">config</span>, <span class="mono">incident</span> events</td></tr>
+        <tr><td class="mono">GET /api/history?target=&amp;loc=</td><td>48 h raw + 30 d hourly rollups for one tile</td></tr>
+        <tr><td class="mono">GET /api/probes/:CC</td><td>Providers with live probes in a country (cached 10 min)</td></tr>
+        <tr><td class="mono">POST /api/targets</td><td>Create target <span class="mono">{name, url, intervalSeconds, locations:[{country, isp?}], degradedMs?, expectText?}</span></td></tr>
+        <tr><td class="mono">PUT /api/targets/:id</td><td>Edit (partial body, incl. <span class="mono">{enabled}</span>)</td></tr>
+        <tr><td class="mono">DELETE /api/targets/:id</td><td>Remove target and its history</td></tr>
+        <tr><td class="mono">POST /api/targets/:id/check</td><td>Run a check immediately</td></tr>
+        <tr><td class="mono">PUT /api/settings</td><td><span class="mono">{provider, globalpingToken, alerts:{webhookUrl, minConsecutiveFails, enabled}}</span></td></tr>
+        <tr><td class="mono">POST /api/alerts/test</td><td>Send a test message to the configured webhook</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="deploy">Deployment</h2>
+    <pre><code># Docker (recommended — any $5 VPS)
+ADMIN_PASSWORD=change-me docker compose up -d --build
+
+# Bare Node (18.17+), no dependencies to install
+ADMIN_PASSWORD=change-me npm start        # → http://localhost:4000</code></pre>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Env var</th><th>Default</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">PORT</td><td class="mono">4000</td><td>HTTP port</td></tr>
+        <tr><td class="mono">DATA_DIR</td><td class="mono">./data</td><td>Persistence directory (a Docker volume in compose)</td></tr>
+        <tr><td class="mono">ADMIN_PASSWORD</td><td>–</td><td>Enables the login gate — always set it on a server</td></tr>
+        <tr><td class="mono">GLOBALPING_TOKEN</td><td>–</td><td>Probe-network token (Settings UI overrides)</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>Who watches the watcher:</strong> point a free external uptime service at
+    <span class="mono">/api/healthz</span>. If the monitor's own host dies, nothing else will
+    tell you.</p>
+    <p><strong>Rate limits:</strong> one check of one URL from one location = one probe test.
+    Budget: <span class="mono">locations × (3600 / interval)</span> tests per hour per target.
+    Unregistered ≈ 250/h, registered (free token) ≈ 500/h, sponsorship credits go beyond.
+    “This server” and Simulated checks are always free and unlimited.</p>
+
+    <h2 id="glossary">Glossary</h2>
+    <div class="table-scroll"><table>
+      <tbody>
+        <tr><td><strong>Probe</strong></td><td>A real machine in some country/network that performs a check on our behalf.</td></tr>
+        <tr><td><strong>Target</strong></td><td>A URL we monitor, with its schedule and locations.</td></tr>
+        <tr><td><strong>Location</strong></td><td>Country + optional provider a target is checked from. One tile per location.</td></tr>
+        <tr><td><strong>Latency / ms</strong></td><td>How long the site took to answer, in milliseconds. Under ~300 ms feels instant; multiple seconds feels broken.</td></tr>
+        <tr><td><strong>p95</strong></td><td>The response time 95% of checks beat — the “bad day” number, more honest than the average.</td></tr>
+        <tr><td><strong>Uptime</strong></td><td>Share of checks (in a window) that were not Down. 99.9% ≈ 43 minutes of downtime per month.</td></tr>
+        <tr><td><strong>DNS</strong></td><td>The internet's phone book: turning our domain name into a server address. If DNS fails, users can't even start loading the site.</td></tr>
+        <tr><td><strong>TLS / certificate</strong></td><td>The encryption handshake behind the padlock icon. An expired certificate makes browsers block the site with a warning.</td></tr>
+        <tr><td><strong>CDN edge</strong></td><td>The nearby datacenter that serves our content in each region. “Served by” on a tile names it.</td></tr>
+        <tr><td><strong>ISP / provider</strong></td><td>An internet provider (Magti, Silknet…). Blocks and outages often happen per-provider, not per-country.</td></tr>
+        <tr><td><strong>Content assertion</strong></td><td>Text that must appear in the response for the check to pass — unmasks block pages that fake a successful response.</td></tr>
+        <tr><td><strong>Incident</strong></td><td>A group of consecutive failed checks from one location: start, duration, error, diagnosis.</td></tr>
+        <tr><td><strong>Webhook</strong></td><td>A URL that receives our alert messages — e.g. a Slack channel's incoming-webhook address.</td></tr>
+      </tbody>
+    </table></div>
+  </main>
+</div>
+</body>
+</html>

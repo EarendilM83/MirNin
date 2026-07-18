@@ -84,6 +84,11 @@ button.ghost {
   border-radius: 8px; padding: 5px 12px; cursor: pointer; font-size: 13px;
 }
 button.ghost:hover { border-color: var(--accent); color: var(--ink); }
+a.btn-link {
+  border: 1px solid var(--ring); background: transparent; color: var(--ink-2);
+  border-radius: 8px; padding: 5px 12px; font-size: 13px; text-decoration: none;
+}
+a.btn-link:hover { border-color: var(--accent); color: var(--ink); }
 button.danger {
   appearance: none; border: 1px solid var(--crit); background: transparent; color: var(--crit-text);
   border-radius: 8px; padding: 5px 12px; cursor: pointer; font-size: 13px;
