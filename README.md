@@ -22,14 +22,38 @@ start immediately and stream to the dashboard live.
 ## How checks work
 
 Each target (URL) is checked on its own schedule from every location you
-selected. A check records latency and HTTP status, classified as:
+selected. A location is a **country plus an optional provider (ISP)** — add
+"Georgia · Magti" and "Georgia · Silknet" side by side to catch provider-level
+blocks. Every check records latency with a **phase breakdown**
+(DNS → connect → TLS → first byte → download), response size, redirect chain,
+the CDN edge that served it, and days until the SSL certificate expires.
+Results are classified as:
 
 | Status | Meaning |
 |---|---|
 | Operational | Responded 2xx/3xx within the degraded threshold |
 | Degraded | Responded, but slowly or with a 4xx (possible geo-block) |
-| Down | Timeout, connection failure, or 5xx |
+| Down | Timeout, connection failure, 5xx, or expected content missing |
 | No data | The check itself could not run (probe network unreachable) |
+
+Optional per-target **content assertion**: if the response doesn't contain the
+expected text, the check counts as Down even with a 200 status — this is what
+catches ISP block pages pretending to be your site.
+
+### Divergence detection & diagnostics
+
+When providers inside one country disagree (Magti failing while Silknet
+passes), tiles get an explicit "suspected ISP-level block" badge instead of a
+muddy average. On every transition to Down, the monitor automatically runs
+ping + DNS diagnostics from that same location and attaches the verdict to the
+incident.
+
+### History & incidents
+
+Raw checks are kept ~48 h; hourly rollups (status counts, p50/p95) are kept
+90 days. That powers the focus view's 1 h → 30 d range selector, 24 h/7 d/30 d
+uptime, a week-at-a-glance status heatmap, and the per-target incident
+timeline (start, duration, location, error, diagnosis).
 
 “No data” is deliberately distinct from “Down” — *we couldn't look* is not the
 same as *the site is broken*.
@@ -60,9 +84,11 @@ Targets and settings live in `data/config.json`; recent results are flushed to
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/state` | Full snapshot: targets, history, uptime |
+| `GET /api/state` | Full snapshot: targets, recent history, uptimes, incidents |
 | `GET /api/events` | Server-sent events stream of live results |
-| `POST /api/targets` | Add a target `{name, url, intervalSeconds, countries, degradedMs?}` |
+| `GET /api/history?target=&loc=` | 48 h raw + 30 d hourly rollups for one tile |
+| `GET /api/probes/:CC` | Providers with live Globalping probes in a country |
+| `POST /api/targets` | Add a target `{name, url, intervalSeconds, locations: [{country, isp?}], degradedMs?, expectText?}` |
 | `PUT /api/targets/:id` | Edit a target (partial body allowed, incl. `{enabled}`) |
 | `DELETE /api/targets/:id` | Remove a target and its history |
 | `POST /api/targets/:id/check` | Run a check immediately |
@@ -71,6 +97,7 @@ Targets and settings live in `data/config.json`; recent results are flushed to
 ## Roadmap
 
 - Complex flows: scripted browser journeys (login → search → checkout) via
-  Playwright, shown as just another tile per country
+  Playwright, shown as just another tile per location
 - Alerting (email/Slack/Telegram) when a tile leaves Operational
-- Long-term history storage (SQLite) and SLA reports
+- Self-hosted mini-probes on specific ISPs (office/home devices phoning home)
+  for guaranteed provider coverage

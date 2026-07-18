@@ -1,11 +1,11 @@
-// MirNin Monitor — multi-country reachability monitoring.
+// MirNin Monitor — multi-country, multi-ISP reachability monitoring.
 // Zero-dependency Node.js server: REST API + SSE live stream + static dashboard.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { Store } from './lib/store.js';
+import { Store, locKey } from './lib/store.js';
 import { Scheduler } from './lib/scheduler.js';
 import { globalpingStatus } from './lib/checker.js';
 import { COUNTRIES, isValidCountry } from './lib/countries.js';
@@ -13,30 +13,49 @@ import { COUNTRIES, isValidCountry } from './lib/countries.js';
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = join(ROOT, 'public');
 const PORT = Number(process.env.PORT ?? 4000);
+const DAY = 24 * 60 * 60 * 1000;
 
 const store = new Store(process.env.DATA_DIR ?? join(ROOT, 'data'));
 const sseClients = new Set();
-
-const scheduler = new Scheduler(store, (target, results) => {
-  broadcast('result', {
-    targetId: target.id,
-    nextRunAt: scheduler.getNextRunAt(target.id),
-    results: results.map(({ country, entry }) => ({
-      country,
-      entry,
-      uptime24h: store.uptime24h(target.id, country),
-    })),
-  });
-});
 
 function broadcast(event, data) {
   const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const res of sseClients) res.write(frame);
 }
 
+const scheduler = new Scheduler(
+  store,
+  (target, results) => broadcast('result', {
+    targetId: target.id,
+    nextRunAt: scheduler.getNextRunAt(target.id),
+    results: results.map(({ key, entry }) => ({
+      key, entry,
+      uptime24h: store.uptime(target.id, key, DAY),
+    })),
+  }),
+  (target, incident) => broadcast('incident', { targetId: target.id, incidentId: incident.id }),
+);
+
 // --- validation --------------------------------------------------------------
 
 const MIN_INTERVAL = 30;
+
+function parseLocations(raw) {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 30) return null;
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    const country = String(item?.country ?? '').toUpperCase().trim();
+    if (!isValidCountry(country)) return null;
+    let isp = item?.isp == null ? null : String(item.isp).trim().slice(0, 60);
+    if (isp === '' || country === 'LOCAL') isp = null;
+    const key = locKey({ country, isp });
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ country, isp });
+  }
+  return out.length ? out : null;
+}
 
 function validateTarget(body, { partial = false } = {}) {
   const errors = [];
@@ -59,17 +78,20 @@ function validateTarget(body, { partial = false } = {}) {
       errors.push(`intervalSeconds must be between ${MIN_INTERVAL} and 86400`);
     } else out.intervalSeconds = n;
   }
-  if (body.countries !== undefined || !partial) {
-    const list = Array.isArray(body.countries) ? [...new Set(body.countries)] : [];
-    if (list.length === 0 || list.length > 30 || !list.every(isValidCountry)) {
-      errors.push('countries must be a non-empty list of known location codes');
-    } else out.countries = list;
+  if (body.locations !== undefined || !partial) {
+    const locations = parseLocations(body.locations);
+    if (!locations) errors.push('locations must be a non-empty list of {country, isp?} with known country codes');
+    else out.locations = locations;
   }
   if (body.enabled !== undefined) out.enabled = Boolean(body.enabled);
   if (body.degradedMs !== undefined) {
     const n = Number(body.degradedMs);
     if (!Number.isInteger(n) || n < 100 || n > 60000) errors.push('degradedMs must be 100–60000');
     else out.degradedMs = n;
+  }
+  if (body.expectText !== undefined) {
+    const s = String(body.expectText ?? '').slice(0, 200);
+    out.expectText = s.trim() === '' ? null : s;
   }
   return { errors, out };
 }
@@ -84,10 +106,17 @@ function stateSnapshot() {
     targets: store.config.targets.map((t) => ({
       ...t,
       nextRunAt: scheduler.getNextRunAt(t.id),
-      results: Object.fromEntries(t.countries.map((c) => [c, {
-        history: store.history(t.id, c),
-        uptime24h: store.uptime24h(t.id, c),
-      }])),
+      incidents: store.incidentsFor(t.id, 12),
+      results: Object.fromEntries(t.locations.map((loc) => {
+        const key = locKey(loc);
+        return [key, {
+          loc,
+          history: store.history(t.id, key, 60),
+          uptime24h: store.uptime(t.id, key, DAY),
+          uptime7d: store.uptime(t.id, key, 7 * DAY),
+          uptime30d: store.uptime(t.id, key, 30 * DAY),
+        }];
+      })),
     })),
   };
 }
@@ -106,7 +135,28 @@ const json = (res, code, value) => {
   res.end(JSON.stringify(value));
 };
 
-async function handleApi(req, res, path) {
+// Cache of Globalping probe networks per country, for the admin "providers
+// with live probes" hint. Refreshed at most every 10 minutes.
+let probeCache = { t: 0, byCountry: null };
+async function probeNetworks(country) {
+  if (Date.now() - probeCache.t > 10 * 60 * 1000) {
+    const res = await fetch('https://api.globalping.io/v1/probes', { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`probes list unavailable (${res.status})`);
+    const probes = await res.json();
+    const byCountry = {};
+    for (const p of probes) {
+      const c = p.location?.country;
+      const n = p.location?.network;
+      if (!c || !n) continue;
+      (byCountry[c] ??= new Set()).add(n);
+    }
+    probeCache = { t: Date.now(), byCountry };
+  }
+  return [...(probeCache.byCountry[country] ?? [])].sort();
+}
+
+async function handleApi(req, res, url) {
+  const path = url.pathname;
   if (req.method === 'GET' && path === '/api/state') return json(res, 200, stateSnapshot());
 
   if (req.method === 'GET' && path === '/api/events') {
@@ -122,10 +172,32 @@ async function handleApi(req, res, path) {
     return;
   }
 
+  // Full raw history (48h) + hourly rollups (30d) for one tile — used by the
+  // focus view's range selector and heatmap.
+  if (req.method === 'GET' && path === '/api/history') {
+    const targetId = url.searchParams.get('target');
+    const key = url.searchParams.get('loc');
+    const target = store.config.targets.find((t) => t.id === targetId);
+    if (!target || !key) return json(res, 404, { errors: ['target or loc not found'] });
+    return json(res, 200, {
+      raw: store.fullHistory(targetId, key).slice(-2000),
+      rollups: store.rollupRange(targetId, key, 30 * 24),
+    });
+  }
+
+  const probeMatch = path.match(/^\/api\/probes\/([A-Z]{2})$/);
+  if (req.method === 'GET' && probeMatch) {
+    try {
+      return json(res, 200, { country: probeMatch[1], networks: await probeNetworks(probeMatch[1]) });
+    } catch (err) {
+      return json(res, 200, { country: probeMatch[1], networks: null, error: err.message });
+    }
+  }
+
   if (req.method === 'POST' && path === '/api/targets') {
     const { errors, out } = validateTarget(await readBody(req));
     if (errors.length) return json(res, 400, { errors });
-    const target = { id: randomUUID(), enabled: true, ...out };
+    const target = { id: randomUUID(), enabled: true, expectText: null, ...out };
     store.config.targets.push(target);
     store.saveConfig();
     scheduler.sync();
@@ -153,7 +225,7 @@ async function handleApi(req, res, path) {
     }
     if (req.method === 'DELETE' && !targetMatch[2]) {
       store.config.targets = store.config.targets.filter((t) => t.id !== target.id);
-      store.removeTargetResults(target.id);
+      store.removeTarget(target.id);
       store.saveConfig();
       scheduler.sync();
       broadcast('config', {});
@@ -202,12 +274,12 @@ async function serveStatic(res, path) {
 }
 
 const server = createServer(async (req, res) => {
-  const path = new URL(req.url, 'http://x').pathname;
+  const url = new URL(req.url, 'http://x');
   try {
-    if (path.startsWith('/api/')) await handleApi(req, res, path);
-    else await serveStatic(res, path);
+    if (url.pathname.startsWith('/api/')) await handleApi(req, res, url);
+    else await serveStatic(res, url.pathname);
   } catch (err) {
-    console.error(`${req.method} ${path} failed:`, err.message);
+    console.error(`${req.method} ${url.pathname} failed:`, err.message);
     if (!res.headersSent) json(res, 500, { errors: [err.message] });
   }
 });
@@ -218,11 +290,11 @@ server.listen(PORT, () => {
 });
 
 scheduler.start();
-setInterval(() => store.flushResults(), 30000).unref();
+setInterval(() => store.flush(), 30000).unref();
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
-    store.flushResults();
+    store.flush();
     process.exit(0);
   });
 }

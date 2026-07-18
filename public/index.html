@@ -11,7 +11,7 @@
   <header>
     <div class="brand">
       <h1>MirNin Monitor</h1>
-      <span class="sub">reachability by country</span>
+      <span class="sub">reachability by country &amp; provider</span>
     </div>
     <span class="net-note" id="net-note" hidden></span>
     <div class="spacer"></div>
@@ -68,9 +68,15 @@
         </select>
       </label>
       <div class="field">
-        <span>Check from</span>
-        <div class="chips" id="country-chips"></div>
+        <span>Check from <em class="hint-inline">country, optionally pinned to one provider — add the same country twice to compare ISPs</em></span>
+        <div id="loc-rows"></div>
+        <button type="button" class="ghost" id="btn-add-loc">+ Add location</button>
+        <p class="providers-hint" id="providers-hint" hidden></p>
       </div>
+      <label class="field">
+        <span>Expect text in response <em class="hint-inline">optional — catches block pages that return 200</em></span>
+        <input name="expectText" maxlength="200" placeholder="e.g. MirNin">
+      </label>
       <label class="field">
         <span>Mark as degraded when slower than</span>
         <select name="degradedMs">
