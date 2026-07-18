@@ -1,0 +1,10 @@
+{
+  "name": "mirnin-monitor",
+  "version": "0.1.0",
+  "description": "Multi-country reachability monitoring for the MirNin platform",
+  "type": "module",
+  "engines": { "node": ">=18.17" },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

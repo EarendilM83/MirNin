@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MirNin Monitor</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>MirNin Monitor</h1>
+      <span class="sub">reachability by country</span>
+    </div>
+    <span class="net-note" id="net-note" hidden></span>
+    <div class="spacer"></div>
+    <div class="interval">
+      <label for="provider">Probes</label>
+      <select id="provider">
+        <option value="auto">Real (Globalping)</option>
+        <option value="simulated">Simulated (demo)</option>
+      </select>
+    </div>
+    <div class="seg" role="group" aria-label="View">
+      <button id="btn-grid" aria-pressed="true">Grid</button>
+      <button id="btn-list" aria-pressed="false">List</button>
+    </div>
+    <button class="primary" id="btn-add">+ Add URL</button>
+  </header>
+
+  <nav class="tabs" id="tabs" aria-label="Targets"></nav>
+  <div class="summary" id="summary"></div>
+
+  <main id="main"></main>
+
+  <footer id="foot"></footer>
+
+  <!-- focus overlay -->
+  <div class="overlay" id="focus-overlay" hidden>
+    <div class="focus-wrap">
+      <div class="focus-main" id="focus-main" role="dialog" aria-modal="true" aria-label="Probe detail"></div>
+      <div class="strip" id="focus-strip"></div>
+    </div>
+  </div>
+
+  <!-- add/edit target modal -->
+  <div class="overlay" id="target-overlay" hidden>
+    <form class="modal" id="target-form" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title">Add URL</h2>
+      <label class="field">
+        <span>Name</span>
+        <input name="name" maxlength="60" placeholder="MirNin production" required>
+      </label>
+      <label class="field">
+        <span>URL to check</span>
+        <input name="url" type="url" placeholder="https://app.mirnin.com/health" required>
+      </label>
+      <label class="field">
+        <span>Check every</span>
+        <select name="intervalSeconds">
+          <option value="30">30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="120">2 minutes</option>
+          <option value="300" selected>5 minutes</option>
+          <option value="900">15 minutes</option>
+          <option value="3600">1 hour</option>
+        </select>
+      </label>
+      <div class="field">
+        <span>Check from</span>
+        <div class="chips" id="country-chips"></div>
+      </div>
+      <label class="field">
+        <span>Mark as degraded when slower than</span>
+        <select name="degradedMs">
+          <option value="1000">1 second</option>
+          <option value="2000" selected>2 seconds</option>
+          <option value="5000">5 seconds</option>
+          <option value="10000">10 seconds</option>
+        </select>
+      </label>
+      <p class="form-error" id="form-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="danger" id="btn-delete" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" id="btn-cancel">Cancel</button>
+        <button type="submit" class="primary" id="btn-save">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
