@@ -1,0 +1,16 @@
+services:
+  monitor:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      # Required in any shared/exposed deployment — pick a strong password.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      # Optional: raises Globalping rate limits (can also be set in the UI).
+      GLOBALPING_TOKEN: ${GLOBALPING_TOKEN:-}
+    volumes:
+      - monitor-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  monitor-data:

@@ -26,6 +26,7 @@
       <button id="btn-grid" aria-pressed="true">Grid</button>
       <button id="btn-list" aria-pressed="false">List</button>
     </div>
+    <button class="ghost" id="btn-settings">Settings</button>
     <button class="primary" id="btn-add">+ Add URL</button>
   </header>
 
@@ -92,6 +93,66 @@
         <span class="spacer"></span>
         <button type="button" id="btn-cancel">Cancel</button>
         <button type="submit" class="primary" id="btn-save">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- settings modal -->
+  <div class="overlay" id="settings-overlay" hidden>
+    <form class="modal" id="settings-form" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <h2 id="settings-title">Settings</h2>
+
+      <h3 class="modal-section">Alerts</h3>
+      <label class="field">
+        <span>Webhook URL <em class="hint-inline">Slack incoming webhook or any endpoint accepting {"text": …} JSON</em></span>
+        <input name="webhookUrl" maxlength="500" placeholder="https://hooks.slack.com/services/…">
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>Alert after</span>
+          <select name="minConsecutiveFails">
+            <option value="1">1 failed check</option>
+            <option value="2" selected>2 consecutive checks</option>
+            <option value="3">3 consecutive checks</option>
+            <option value="5">5 consecutive checks</option>
+          </select>
+        </label>
+        <label class="field check-field">
+          <span>&nbsp;</span>
+          <span class="check-line"><input type="checkbox" name="alertsEnabled" checked> Alerts enabled</span>
+        </label>
+      </div>
+      <button type="button" class="ghost" id="btn-test-alert">Send test alert</button>
+      <span class="test-result" id="test-result"></span>
+
+      <h3 class="modal-section">Probe network</h3>
+      <label class="field">
+        <span>Globalping API token <em class="hint-inline">raises rate limits — free at globalping.io after signing in</em></span>
+        <input name="globalpingToken" maxlength="200" placeholder="paste token, leave blank to keep unset" autocomplete="off">
+      </label>
+
+      <p class="form-error" id="settings-error" hidden></p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button type="button" id="btn-settings-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- login screen -->
+  <div class="overlay login-overlay" id="login-overlay" hidden>
+    <form class="modal login-box" id="login-form" aria-labelledby="login-title">
+      <h2 id="login-title">MirNin Monitor</h2>
+      <p class="login-note">This dashboard is password-protected.</p>
+      <label class="field">
+        <span>Password</span>
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p class="form-error" id="login-error" hidden></p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button type="submit" class="primary">Sign in</button>
       </div>
     </form>
   </div>

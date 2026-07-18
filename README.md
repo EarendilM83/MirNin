@@ -69,13 +69,40 @@ same as *the site is broken*.
 - **Simulated mode** (Probes selector in the header) generates synthetic
   results so you can explore the UI without network access.
 
+### Alerts
+
+Settings → paste a webhook URL (a Slack incoming webhook works as-is; the
+payload is `{"text": "…"}` JSON). You get a 🔴 message when a location fails
+N consecutive checks — including the auto-diagnosis verdict — and a 🟢 message
+on recovery with the outage duration. "Send test alert" verifies the wiring.
+
+### Authentication
+
+Set `ADMIN_PASSWORD` to require a login. Sessions are HMAC-signed cookies
+(7-day expiry); the signing secret is generated once under `data/`. Without
+the variable the dashboard stays open (fine on localhost) and shows an
+"Unprotected" notice. Always set it before exposing the monitor to a network.
+
+## Deploying (Docker)
+
+```bash
+ADMIN_PASSWORD=change-me docker compose up -d --build
+# or: docker build -t mirnin-monitor . && docker run -d -p 4000:4000 \
+#     -e ADMIN_PASSWORD=change-me -v monitor-data:/app/data mirnin-monitor
+```
+
+Works on any $5 VPS or container host. `GET /api/healthz` is unauthenticated
+and made for an external watchdog (UptimeRobot or similar) — a monitor nobody
+watches when *it* dies is a blind spot, so point something at it.
+
 ## Configuration
 
 | Env var | Default | Purpose |
 |---|---|---|
 | `PORT` | `4000` | HTTP port |
 | `DATA_DIR` | `./data` | Where config + results are persisted (JSON) |
-| `GLOBALPING_TOKEN` | – | Optional Globalping API token for higher rate limits |
+| `ADMIN_PASSWORD` | – | Enables login protection (recommended) |
+| `GLOBALPING_TOKEN` | – | Globalping API token for higher rate limits (can also be set in Settings) |
 
 Targets and settings live in `data/config.json`; recent results are flushed to
 `data/results.json` every 30 s and kept for ~25 h (the 24 h uptime window).
@@ -84,6 +111,9 @@ Targets and settings live in `data/config.json`; recent results are flushed to
 
 | Method & path | Purpose |
 |---|---|
+| `GET /api/healthz` | Liveness for external watchdogs (no auth) |
+| `POST /api/login` / `POST /api/logout` | Session management when `ADMIN_PASSWORD` is set |
+| `POST /api/alerts/test` | Send a test message to the configured webhook |
 | `GET /api/state` | Full snapshot: targets, recent history, uptimes, incidents |
 | `GET /api/events` | Server-sent events stream of live results |
 | `GET /api/history?target=&loc=` | 48 h raw + 30 d hourly rollups for one tile |

@@ -378,6 +378,24 @@ footer {
 }
 .providers-hint .chip:hover { border-color: var(--accent); color: var(--ink); }
 
+/* ---------- v3: settings & login ---------- */
+.modal-section {
+  font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; margin: 18px 0 10px;
+  border-top: 1px solid var(--grid-line); padding-top: 14px;
+}
+.modal-section:first-of-type { border-top: 0; padding-top: 0; margin-top: 4px; }
+.field-row { display: flex; gap: 14px; }
+.field-row .field { flex: 1; }
+.check-line { display: flex; align-items: center; gap: 8px; font-weight: 400; color: var(--ink); }
+.check-line input { width: auto; }
+.test-result { font-size: 12.5px; margin-left: 10px; }
+.test-result.ok { color: var(--good-text); }
+.test-result.fail { color: var(--crit-text); }
+.login-overlay { align-items: center; }
+.login-box { max-width: 360px; }
+.login-note { color: var(--ink-2); font-size: 13px; margin: 0 0 14px; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }

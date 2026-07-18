@@ -200,6 +200,9 @@
     if (!gp.available && state.data.settings.provider !== 'simulated' && hasRemote) {
       note.hidden = false;
       note.textContent = 'Probe network unreachable — country checks show “No data” until it recovers';
+    } else if (!state.data.authEnabled) {
+      note.hidden = false;
+      note.textContent = 'Unprotected — set ADMIN_PASSWORD to require a login';
     } else note.hidden = true;
   }
 
@@ -603,6 +606,8 @@
 
   async function refresh() {
     const res = await fetch('/api/state');
+    if (res.status === 401) { $('#login-overlay').hidden = false; $('#login-form').password.focus(); return; }
+    $('#login-overlay').hidden = true;
     state.data = await res.json();
     if (state.tab !== 'overview' && !state.data.targets.some((t) => t.id === state.tab)) state.tab = 'overview';
     render();
@@ -664,11 +669,13 @@
 
     if (ev.target === $('#focus-overlay')) { state.focus = null; state.focusData = null; renderFocus(); }
     if (ev.target === $('#target-overlay')) { $('#target-overlay').hidden = true; state.editing = null; }
+    if (ev.target === $('#settings-overlay')) { $('#settings-overlay').hidden = true; }
   });
 
   document.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
-    if (!$('#target-overlay').hidden) { $('#target-overlay').hidden = true; state.editing = null; }
+    if (!$('#settings-overlay').hidden) { $('#settings-overlay').hidden = true; }
+    else if (!$('#target-overlay').hidden) { $('#target-overlay').hidden = true; state.editing = null; }
     else if (state.focus) { state.focus = null; state.focusData = null; renderFocus(); }
   });
 
@@ -693,6 +700,78 @@
   };
   $('#provider').onchange = async (ev) => {
     await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: ev.target.value === 'simulated' ? 'simulated' : 'auto' }) });
+  };
+
+  // ---------- settings modal -------------------------------------------------
+
+  $('#btn-settings').onclick = () => {
+    const form = $('#settings-form');
+    const s = state.data.settings;
+    form.webhookUrl.value = s.alerts?.webhookUrl ?? '';
+    form.minConsecutiveFails.value = String(s.alerts?.minConsecutiveFails ?? 2);
+    form.alertsEnabled.checked = s.alerts?.enabled !== false;
+    form.globalpingToken.value = s.globalpingToken ?? '';
+    $('#settings-error').hidden = true;
+    $('#test-result').textContent = '';
+    $('#settings-overlay').hidden = false;
+    form.webhookUrl.focus();
+  };
+  $('#btn-settings-cancel').onclick = () => { $('#settings-overlay').hidden = true; };
+  $('#settings-form').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const form = $('#settings-form');
+    const res = await fetch('/api/settings', {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        globalpingToken: form.globalpingToken.value,
+        alerts: {
+          webhookUrl: form.webhookUrl.value,
+          minConsecutiveFails: Number(form.minConsecutiveFails.value),
+          enabled: form.alertsEnabled.checked,
+        },
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ errors: ['request failed'] }));
+      $('#settings-error').hidden = false;
+      $('#settings-error').textContent = (err.errors ?? ['request failed']).join('. ');
+      return;
+    }
+    $('#settings-overlay').hidden = true;
+    await refresh();
+  };
+  $('#btn-test-alert').onclick = async () => {
+    const out = $('#test-result');
+    // save the webhook first so the test uses what's in the box
+    const form = $('#settings-form');
+    await fetch('/api/settings', {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ alerts: { webhookUrl: form.webhookUrl.value } }),
+    });
+    out.textContent = 'sending…'; out.className = 'test-result';
+    const res = await fetch('/api/alerts/test', { method: 'POST' });
+    if (res.ok) { out.textContent = 'delivered ✓'; out.className = 'test-result ok'; }
+    else {
+      const err = await res.json().catch(() => ({}));
+      out.textContent = `failed: ${(err.errors ?? ['unreachable']).join(', ')}`;
+      out.className = 'test-result fail';
+    }
+  };
+
+  // ---------- login ----------------------------------------------------------
+
+  $('#login-form').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const res = await fetch('/api/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: $('#login-form').password.value }),
+    });
+    if (!res.ok) {
+      $('#login-error').hidden = false;
+      $('#login-error').textContent = 'Wrong password.';
+      return;
+    }
+    location.reload(); // fresh boot with the session cookie (also reconnects SSE)
   };
 
   // ---------- boot -----------------------------------------------------------

@@ -2,11 +2,13 @@
 // Zero-dependency Node.js server: REST API + SSE live stream + static dashboard.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { Store, locKey } from './lib/store.js';
 import { Scheduler } from './lib/scheduler.js';
+import { Alerter } from './lib/alerts.js';
 import { globalpingStatus } from './lib/checker.js';
 import { COUNTRIES, isValidCountry } from './lib/countries.js';
 
@@ -23,8 +25,11 @@ function broadcast(event, data) {
   for (const res of sseClients) res.write(frame);
 }
 
+const alerter = new Alerter(store);
+
 const scheduler = new Scheduler(
   store,
+  alerter,
   (target, results) => broadcast('result', {
     targetId: target.id,
     nextRunAt: scheduler.getNextRunAt(target.id),
@@ -35,6 +40,32 @@ const scheduler = new Scheduler(
   }),
   (target, incident) => broadcast('incident', { targetId: target.id, incidentId: incident.id }),
 );
+
+// --- auth --------------------------------------------------------------------
+// Enabled by setting ADMIN_PASSWORD. Sessions are HMAC-signed expiry cookies;
+// the signing secret is generated once and persisted under data/.
+
+const AUTH_ENABLED = Boolean(process.env.ADMIN_PASSWORD);
+const SECRET_PATH = join(process.env.DATA_DIR ?? join(ROOT, 'data'), '.session-secret');
+let sessionSecret;
+if (existsSync(SECRET_PATH)) sessionSecret = readFileSync(SECRET_PATH, 'utf8');
+else { sessionSecret = randomBytes(32).toString('hex'); writeFileSync(SECRET_PATH, sessionSecret, { mode: 0o600 }); }
+
+const sign = (exp) => createHmac('sha256', sessionSecret).update(String(exp)).digest('hex');
+
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a)), bb = Buffer.from(String(b));
+  return ba.length === bb.length && timingSafeEqual(ba, bb);
+}
+
+function hasValidSession(req) {
+  const cookie = /(?:^|;\s*)mm_session=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
+  if (!cookie) return false;
+  const [exp, sig] = cookie.split('.');
+  return Boolean(exp && sig) && Number(exp) > Date.now() && safeEqual(sig, sign(exp));
+}
+
+const PUBLIC_API = new Set(['/api/login', '/api/healthz']);
 
 // --- validation --------------------------------------------------------------
 
@@ -99,9 +130,15 @@ function validateTarget(body, { partial = false } = {}) {
 // --- API ---------------------------------------------------------------------
 
 function stateSnapshot() {
+  const s = store.config.settings;
   return {
     countries: COUNTRIES,
-    settings: store.config.settings,
+    authEnabled: AUTH_ENABLED,
+    settings: {
+      ...s,
+      // never echo the full token back to the browser
+      globalpingToken: s.globalpingToken ? '••••' + s.globalpingToken.slice(-4) : null,
+    },
     globalping: globalpingStatus(),
     targets: store.config.targets.map((t) => ({
       ...t,
@@ -157,6 +194,42 @@ async function probeNetworks(country) {
 
 async function handleApi(req, res, url) {
   const path = url.pathname;
+
+  if (req.method === 'GET' && path === '/api/healthz') {
+    return json(res, 200, { ok: true, targets: store.config.targets.length, uptimeSec: Math.round(process.uptime()) });
+  }
+
+  if (req.method === 'POST' && path === '/api/login') {
+    if (!AUTH_ENABLED) return json(res, 200, { ok: true, authEnabled: false });
+    const body = await readBody(req);
+    if (!safeEqual(body.password ?? '', process.env.ADMIN_PASSWORD)) {
+      return json(res, 401, { errors: ['wrong password'] });
+    }
+    const exp = Date.now() + 7 * 24 * 3600e3;
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'set-cookie': `mm_session=${exp}.${sign(exp)}; Max-Age=${7 * 24 * 3600}; Path=/; HttpOnly; SameSite=Lax`,
+    });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+
+  if (AUTH_ENABLED && !PUBLIC_API.has(path) && !hasValidSession(req)) {
+    return json(res, 401, { errors: ['authentication required'] });
+  }
+
+  if (req.method === 'POST' && path === '/api/logout') {
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'set-cookie': 'mm_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax',
+    });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+
+  if (req.method === 'POST' && path === '/api/alerts/test') {
+    const result = await alerter.send(`✅ Test alert from MirNin Monitor — webhook is wired up. (${new Date().toLocaleString()})`);
+    return json(res, result.ok ? 200 : 502, result.ok ? { ok: true } : { errors: [result.error] });
+  }
+
   if (req.method === 'GET' && path === '/api/state') return json(res, 200, stateSnapshot());
 
   if (req.method === 'GET' && path === '/api/events') {
@@ -235,15 +308,34 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'PUT' && path === '/api/settings') {
     const body = await readBody(req);
+    const s = store.config.settings;
     if (body.provider !== undefined) {
       if (!['auto', 'globalping', 'simulated'].includes(body.provider)) {
         return json(res, 400, { errors: ['provider must be auto, globalping, or simulated'] });
       }
-      store.config.settings.provider = body.provider;
+      s.provider = body.provider;
+    }
+    if (body.globalpingToken !== undefined) {
+      const t = String(body.globalpingToken ?? '').trim();
+      if (!t.startsWith('••••')) s.globalpingToken = t === '' ? null : t.slice(0, 200);
+    }
+    if (body.alerts !== undefined && typeof body.alerts === 'object') {
+      const a = body.alerts;
+      if (a.webhookUrl !== undefined) {
+        const u = String(a.webhookUrl ?? '').trim();
+        if (u !== '' && !/^https?:\/\//.test(u)) return json(res, 400, { errors: ['webhook URL must start with http:// or https://'] });
+        s.alerts.webhookUrl = u === '' ? null : u.slice(0, 500);
+      }
+      if (a.minConsecutiveFails !== undefined) {
+        const n = Number(a.minConsecutiveFails);
+        if (!Number.isInteger(n) || n < 1 || n > 20) return json(res, 400, { errors: ['minConsecutiveFails must be 1–20'] });
+        s.alerts.minConsecutiveFails = n;
+      }
+      if (a.enabled !== undefined) s.alerts.enabled = Boolean(a.enabled);
     }
     store.saveConfig();
     broadcast('config', {});
-    return json(res, 200, store.config.settings);
+    return json(res, 200, { ok: true });
   }
 
   json(res, 404, { errors: ['not found'] });
