@@ -126,6 +126,7 @@
     <a class="lvl2" href="#reading">Reading the dashboard</a>
     <a class="lvl2" href="#statuses">The four statuses</a>
     <a class="lvl2" href="#playbook">What to do when…</a>
+    <a class="lvl2" href="#stats">Statistics &amp; reports</a>
     <a class="part" href="#admin">Part 2 · For admins</a>
     <a class="lvl2" href="#add-url">Adding a URL to watch</a>
     <a class="lvl2" href="#locations">Countries &amp; providers</a>
@@ -226,6 +227,24 @@
       <li><strong>“cert expires in N d” badge</strong> — our security certificate is about to
       expire; if it does, browsers will scare users away. Tell engineering — it's a
       ten-minute fix <em>before</em> the deadline and an outage after it.</li>
+    </ul>
+
+    <h2 id="stats">Statistics &amp; reports</h2>
+    <p>The <strong>Statistics</strong> tab merges every target and location into one picture:</p>
+    <ul>
+      <li><strong>Headline cards</strong> — overall uptime for 24 h / 7 d / 30 d, total checks,
+      incident count, and average repair time (how long outages take to resolve).</li>
+      <li><strong>The year at a glance</strong> — a GitHub-style calendar: one square per day.
+      Green = clean day, yellow = brief issues or degradation, red = real downtime (≥ 1% of
+      that day's checks failed), gray = no data yet. Hover any square for the numbers.
+      Daily statistics are kept forever, so this becomes the long-term memory of the platform.</li>
+      <li><strong>By country / by target</strong> — 30-day uptime, average latency, and incident
+      counts, sorted worst-first so problems float to the top.</li>
+      <li><strong>Download a report</strong> — pick the data (check summaries, incidents, or raw
+      checks), granularity (daily/hourly), a date range, and optionally specific targets and
+      countries; preview the result, then download as CSV (opens in Excel/Sheets) or JSON.
+      Filters compose freely — e.g. “incidents in Georgia, last quarter” or “daily uptime for
+      the payments API, all countries, June”.</li>
     </ul>
 
     <div class="part-label" id="part2">Part 2 · For admins</div>
@@ -365,6 +384,7 @@
         <tr><td class="mono">data/config.json</td><td>Targets, locations, settings (v1 configs migrate automatically)</td><td>forever</td></tr>
         <tr><td class="mono">data/results.json</td><td>Raw check entries per target × location (status, ms, phase timings, size, cert days, edge, content flag)</td><td>~48 h</td></tr>
         <tr><td class="mono">data/rollups.json</td><td>Hourly aggregates: status counts, latency sum, p50/p95</td><td>90 days</td></tr>
+        <tr><td class="mono">data/rollups-daily.json</td><td>Daily aggregates (hours are folded in as they expire from the hourly window — never double-counted)</td><td>forever</td></tr>
         <tr><td class="mono">data/incidents.json</td><td>Outages: start/end, checks, error, diagnosis, alert state</td><td>90 days</td></tr>
       </tbody>
     </table></div>
@@ -382,6 +402,8 @@
         <tr><td class="mono">GET /api/events</td><td>SSE stream: <span class="mono">result</span>, <span class="mono">config</span>, <span class="mono">incident</span> events</td></tr>
         <tr><td class="mono">GET /api/history?target=&amp;loc=</td><td>48 h raw + 30 d hourly rollups for one tile</td></tr>
         <tr><td class="mono">GET /api/probes/:CC</td><td>Providers with live probes in a country (cached 10 min)</td></tr>
+        <tr><td class="mono">GET /api/stats</td><td>Merged statistics: overall uptimes, daily series (calendar), by-country and by-target aggregates</td></tr>
+        <tr><td class="mono">GET /api/report</td><td>Filterable export: <span class="mono">scope=summary|raw|incidents · granularity=daily|hourly · from · to · targets · countries · format=json|csv</span></td></tr>
         <tr><td class="mono">POST /api/targets</td><td>Create target <span class="mono">{name, url, intervalSeconds, locations:[{country, isp?}], degradedMs?, expectText?}</span></td></tr>
         <tr><td class="mono">PUT /api/targets/:id</td><td>Edit (partial body, incl. <span class="mono">{enabled}</span>)</td></tr>
         <tr><td class="mono">DELETE /api/targets/:id</td><td>Remove target and its history</td></tr>

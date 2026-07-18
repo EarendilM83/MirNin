@@ -207,7 +207,7 @@
   }
 
   function renderTabs() {
-    const tabs = [{ id: 'overview', label: 'Overview' }].concat(
+    const tabs = [{ id: 'overview', label: 'Overview' }, { id: 'stats', label: 'Statistics' }].concat(
       state.data.targets.map((t) => ({ id: t.id, label: t.name, status: worstStatus(t), paused: !t.enabled }))
     );
     $('#tabs').innerHTML = tabs.map((t) => `
@@ -217,6 +217,7 @@
   }
 
   function renderSummary() {
+    if (state.tab === 'stats') { $('#summary').innerHTML = ''; return; }
     const scoped = state.data.targets.filter((t) => state.tab === 'overview' || state.tab === t.id);
     const statuses = scoped.flatMap((t) => tiles(t).map(([, s]) => latestOf(s)?.status ?? 'unknown'));
     const count = (s) => statuses.filter((x) => x === s).length;
@@ -243,6 +244,7 @@
       $('#foot').textContent = '';
       return;
     }
+    if (state.tab === 'stats') { renderStats(main); return; }
     if (state.view === 'list') { renderList(main); return; }
     if (state.tab === 'overview') renderOverview(main);
     else renderTarget(main, state.data.targets.find((t) => t.id === state.tab));
@@ -369,6 +371,150 @@
         </table>
       </div>`;
     $('#foot').textContent = 'Click a row to open its full history.';
+  }
+
+  // ---------- statistics tab -------------------------------------------------
+
+  async function renderStats(main) {
+    $('#foot').textContent = 'All targets and locations merged. The calendar fills as history accumulates — one square per day.';
+    if (!state.stats || Date.now() - (state.statsAt ?? 0) > 30000) {
+      main.innerHTML = '<p class="none-note">Loading statistics…</p>';
+      try {
+        const res = await fetch('/api/stats');
+        state.stats = await res.json();
+        state.statsAt = Date.now();
+      } catch { main.innerHTML = '<p class="none-note">Could not load statistics.</p>'; return; }
+      if (state.tab !== 'stats') return; // user moved on while loading
+    }
+    const s = state.stats;
+    const fmtU = (u) => (u == null ? '—' : u.toFixed(u >= 99.995 ? 0 : 2) + '%');
+    const fmtMttr = (ms) => (ms == null ? '—' : ms < 3600e3 ? Math.round(ms / 60000) + ' m' : (ms / 3600e3).toFixed(1) + ' h');
+
+    main.innerHTML = `
+      <div class="summary stats-cards">
+        <div class="stat"><div class="label">Uptime · 24 h</div><div class="value">${fmtU(s.overall['24h'].uptime)}</div></div>
+        <div class="stat"><div class="label">Uptime · 7 d</div><div class="value">${fmtU(s.overall['7d'].uptime)}</div></div>
+        <div class="stat"><div class="label">Uptime · 30 d</div><div class="value">${fmtU(s.overall['30d'].uptime)}</div></div>
+        <div class="stat"><div class="label">Checks · 30 d</div><div class="value">${s.overall['30d'].checks.toLocaleString()}</div></div>
+        <div class="stat"><div class="label">Incidents · 30 d</div><div class="value ${s.incidents30d.open ? 'crit-c' : ''}">${s.incidents30d.count}${s.incidents30d.open ? `<small> (${s.incidents30d.open} open)</small>` : ''}</div></div>
+        <div class="stat"><div class="label">Avg repair time</div><div class="value">${fmtMttr(s.incidents30d.mttrMs)}</div></div>
+      </div>
+
+      <div class="list-card cal-card">
+        <h3>The year at a glance</h3>
+        ${calendarHTML(s.days)}
+        <div class="heat-legend">
+          <span><span class="sw" style="background:var(--good);opacity:.55"></span>clean day</span>
+          <span><span class="sw" style="background:var(--warn)"></span>brief issues / degradation</span>
+          <span><span class="sw" style="background:var(--crit)"></span>real downtime (≥1% of checks)</span>
+          <span><span class="sw" style="background:var(--grid-line)"></span>no data</span>
+        </div>
+      </div>
+
+      <div class="stats-cols">
+        <div class="list-card">
+          <h3>By country · 30 d</h3>
+          <table><thead><tr><th>Location</th><th class="num">Uptime</th><th class="num">Avg ms</th><th class="num">Incidents</th></tr></thead>
+          <tbody>${s.byCountry.map((r) => {
+            const c = state.data.countries[r.country] ?? { name: r.country, flag: '' };
+            return `<tr><td>${c.flag} ${esc(c.name)}</td><td class="num mono ${r.uptime30d != null && r.uptime30d < 99 ? 'crit-c' : ''}">${fmtU(r.uptime30d)}</td><td class="num mono">${r.avgMs ?? '—'}</td><td class="num mono">${r.incidents}</td></tr>`;
+          }).join('')}</tbody></table>
+        </div>
+        <div class="list-card">
+          <h3>By target · 30 d</h3>
+          <table><thead><tr><th>Target</th><th class="num">Uptime</th><th class="num">Avg ms</th><th class="num">Incidents</th></tr></thead>
+          <tbody>${s.byTarget.map((r) =>
+            `<tr><td>${esc(r.name)}</td><td class="num mono ${r.uptime30d != null && r.uptime30d < 99 ? 'crit-c' : ''}">${fmtU(r.uptime30d)}</td><td class="num mono">${r.avgMs ?? '—'}</td><td class="num mono">${r.incidents}</td></tr>`
+          ).join('')}</tbody></table>
+        </div>
+      </div>
+
+      <div class="list-card report-card">
+        <h3>Download a report</h3>
+        <div class="report-form">
+          <label class="field"><span>Data</span>
+            <select id="rep-scope">
+              <option value="summary">Check summary (per period × target × location)</option>
+              <option value="incidents">Incidents</option>
+              <option value="raw">Raw checks (last 48 h only)</option>
+            </select></label>
+          <label class="field"><span>Granularity</span>
+            <select id="rep-gran"><option value="daily">Daily</option><option value="hourly">Hourly</option></select></label>
+          <label class="field"><span>From</span><input type="date" id="rep-from"></label>
+          <label class="field"><span>To</span><input type="date" id="rep-to"></label>
+        </div>
+        <div class="report-form">
+          <div class="field"><span>Targets <em class="hint-inline">none selected = all</em></span>
+            <div class="chips" id="rep-targets">${state.data.targets.map((t) =>
+              `<button type="button" data-rep-t="${t.id}" aria-pressed="false">${esc(t.name)}</button>`).join('')}</div></div>
+          <div class="field"><span>Countries <em class="hint-inline">none selected = all</em></span>
+            <div class="chips" id="rep-countries">${[...new Set(state.data.targets.flatMap((t) => t.locations.map((l) => l.country)))].map((c) =>
+              `<button type="button" data-rep-c="${c}" aria-pressed="false">${(state.data.countries[c] ?? { flag: '' }).flag} ${c}</button>`).join('')}</div></div>
+        </div>
+        <div class="report-actions">
+          <button class="ghost" id="rep-preview">Preview</button>
+          <button class="primary" id="rep-csv">Download CSV</button>
+          <button class="ghost" id="rep-json">Download JSON</button>
+          <span class="test-result" id="rep-count"></span>
+        </div>
+        <div class="table-scroll" id="rep-result"></div>
+      </div>`;
+
+    const today = new Date();
+    $('#rep-to').value = today.toISOString().slice(0, 10);
+    $('#rep-from').value = new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10);
+    for (const b of main.querySelectorAll('[data-rep-t],[data-rep-c]')) {
+      b.onclick = () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+    }
+    const reportUrl = (extra) => {
+      const sel = (q) => [...main.querySelectorAll(`${q}[aria-pressed="true"]`)];
+      const p = new URLSearchParams({
+        scope: $('#rep-scope').value, granularity: $('#rep-gran').value,
+        from: $('#rep-from').value, to: $('#rep-to').value, ...extra,
+      });
+      const ts = sel('[data-rep-t]').map((b) => b.dataset.repT);
+      const cs = sel('[data-rep-c]').map((b) => b.dataset.repC);
+      if (ts.length) p.set('targets', ts.join(','));
+      if (cs.length) p.set('countries', cs.join(','));
+      return '/api/report?' + p.toString();
+    };
+    $('#rep-csv').onclick = () => { location.href = reportUrl({ format: 'csv' }); };
+    $('#rep-json').onclick = () => { location.href = reportUrl({ format: 'json', download: '1' }); };
+    $('#rep-preview').onclick = async () => {
+      $('#rep-count').textContent = 'loading…'; $('#rep-count').className = 'test-result';
+      const res = await fetch(reportUrl({ limit: '15' }));
+      if (!res.ok) { $('#rep-count').textContent = 'failed'; $('#rep-count').className = 'test-result fail'; return; }
+      const data = await res.json();
+      $('#rep-count').textContent = `${data.total >= 15 ? 'first 15 of many' : data.total + ' rows'}`;
+      if (data.rows.length === 0) { $('#rep-result').innerHTML = '<p class="none-note">No data for these filters.</p>'; return; }
+      const cols = Object.keys(data.rows[0]);
+      $('#rep-result').innerHTML = `<table><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+        <tbody>${data.rows.map((r) => `<tr>${cols.map((c) => `<td class="mono">${esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    };
+  }
+
+  function calendarHTML(days) {
+    // GitHub-style: columns are weeks, rows are Mon..Sun, one square per day.
+    const cells = [];
+    const firstDow = (new Date(days[0].t).getDay() + 6) % 7; // Monday = 0
+    for (let i = 0; i < firstDow; i++) cells.push('<i class="pad"></i>');
+    for (const d of days) {
+      const known = d.n - d.unk;
+      let cls = '';
+      if (known > 0) {
+        // red: real downtime; yellow: any downtime or noticeable degradation
+        // (≥0.5% of checks); a few stray slow checks still count as clean.
+        const downRatio = d.down / known;
+        cls = downRatio >= 0.01 ? 'c' : d.down > 0 || d.deg / known >= 0.005 ? 'w' : 'g';
+      }
+      const date = new Date(d.t).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+      const tip = known > 0
+        ? `${date}: ${d.n.toLocaleString()} checks · ${d.down} down · ${d.deg} degraded`
+        : `${date}: no data`;
+      cells.push(`<i class="${cls}" title="${esc(tip)}"></i>`);
+    }
+    const dows = ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].map((d) => `<span class="dow">${d}</span>`).join('');
+    return `<div class="cal-scroll"><div class="cal-dows">${dows}</div><div class="cal">${cells.join('')}</div></div>`;
   }
 
   // ---------- focus overlay --------------------------------------------------

@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
-import { Store, locKey } from './lib/store.js';
+import { Store, locKey, parseLocKey } from './lib/store.js';
 import { Scheduler } from './lib/scheduler.js';
 import { Alerter } from './lib/alerts.js';
 import { globalpingStatus } from './lib/checker.js';
@@ -258,6 +258,10 @@ async function handleApi(req, res, url) {
     });
   }
 
+  if (req.method === 'GET' && path === '/api/stats') return json(res, 200, buildStats());
+
+  if (req.method === 'GET' && path === '/api/report') return handleReport(res, url);
+
   const probeMatch = path.match(/^\/api\/probes\/([A-Z]{2})$/);
   if (req.method === 'GET' && probeMatch) {
     try {
@@ -339,6 +343,185 @@ async function handleApi(req, res, url) {
   }
 
   json(res, 404, { errors: ['not found'] });
+}
+
+// --- statistics & reports ----------------------------------------------------
+
+const pct = (acc) => {
+  const known = acc.n - acc.unk;
+  return known > 0 ? (100 * (acc.up + acc.deg)) / known : null;
+};
+const avgMs = (acc) => (acc.msN > 0 ? Math.round(acc.msSum / acc.msN) : null);
+const targetName = (id) => store.config.targets.find((t) => t.id === id)?.name ?? id;
+
+function buildStats() {
+  const overall = {};
+  for (const [label, ms] of [['24h', DAY], ['7d', 7 * DAY], ['30d', 30 * DAY]]) {
+    const acc = store.aggregate(ms, () => 'all').get('all') ?? { n: 0, unk: 0, up: 0, deg: 0, msSum: 0, msN: 0 };
+    overall[label] = { uptime: pct(acc), checks: acc.n, avgMs: avgMs(acc) };
+  }
+  const cutoff30 = Date.now() - 30 * DAY;
+  const recent = store.incidents.filter((i) => i.startT >= cutoff30);
+  const closed = recent.filter((i) => i.endT != null);
+  const mttrMs = closed.length ? closed.reduce((a, i) => a + (i.endT - i.startT), 0) / closed.length : null;
+
+  const byCountry = [...store.aggregate(30 * DAY, (tid, key) => parseLocKey(key).country)]
+    .map(([country, acc]) => ({
+      country,
+      uptime30d: pct(acc), avgMs: avgMs(acc), checks: acc.n,
+      incidents: recent.filter((i) => parseLocKey(i.loc).country === country).length,
+    }))
+    .filter((r) => r.checks > 0)
+    .sort((a, b) => (a.uptime30d ?? 101) - (b.uptime30d ?? 101));
+
+  const byTarget = [...store.aggregate(30 * DAY, (tid) => tid)]
+    .map(([tid, acc]) => ({
+      id: tid, name: targetName(tid),
+      uptime30d: pct(acc), avgMs: avgMs(acc), checks: acc.n,
+      incidents: recent.filter((i) => i.targetId === tid).length,
+    }))
+    .filter((r) => store.config.targets.some((t) => t.id === r.id))
+    .sort((a, b) => (a.uptime30d ?? 101) - (b.uptime30d ?? 101));
+
+  return {
+    overall,
+    incidents30d: { count: recent.length, open: recent.filter((i) => i.endT == null).length, mttrMs },
+    days: store.dailySeries(371),
+    byCountry,
+    byTarget,
+  };
+}
+
+function parseReportFilters(url) {
+  const q = url.searchParams;
+  const now = Date.now();
+  const parseDate = (s, fallback) => {
+    if (!s) return fallback;
+    const t = /^\d+$/.test(s) ? Number(s) : Date.parse(s);
+    return Number.isNaN(t) ? fallback : t;
+  };
+  const csv = (s) => (s ? new Set(s.split(',').map((x) => x.trim()).filter(Boolean)) : null);
+  return {
+    from: parseDate(q.get('from'), now - 30 * DAY),
+    to: parseDate(q.get('to'), now) + (q.get('to')?.length === 10 ? DAY - 1 : 0), // inclusive end date
+    targets: csv(q.get('targets')),
+    countries: csv(q.get('countries')),
+    scope: ['summary', 'raw', 'incidents'].includes(q.get('scope')) ? q.get('scope') : 'summary',
+    granularity: q.get('granularity') === 'hourly' ? 'hourly' : 'daily',
+    format: q.get('format') === 'csv' ? 'csv' : 'json',
+    limit: Math.min(Number(q.get('limit')) || 100000, 100000),
+  };
+}
+
+function reportRows(f) {
+  const want = (tid, key) =>
+    (!f.targets || f.targets.has(tid)) &&
+    (!f.countries || f.countries.has(parseLocKey(key).country));
+  const rows = [];
+
+  if (f.scope === 'incidents') {
+    for (const i of store.incidents) {
+      if (i.startT < f.from || i.startT > f.to || !want(i.targetId, i.loc)) continue;
+      rows.push({
+        started: new Date(i.startT).toISOString(),
+        ended: i.endT ? new Date(i.endT).toISOString() : 'ongoing',
+        durationMin: i.endT ? Math.round((i.endT - i.startT) / 60000) : null,
+        target: targetName(i.targetId), location: i.loc,
+        failedChecks: i.checks, error: i.error ?? '',
+        diagnosis: i.diag?.note ?? (i.diag ? 'attached' : ''),
+      });
+    }
+    rows.sort((a, b) => (a.started < b.started ? 1 : -1));
+    return rows;
+  }
+
+  if (f.scope === 'raw') {
+    for (const [tid, byKey] of Object.entries(store.results)) {
+      for (const [key, list] of Object.entries(byKey)) {
+        if (!want(tid, key)) continue;
+        for (const e of list) {
+          if (e.t < f.from || e.t > f.to) continue;
+          rows.push({
+            time: new Date(e.t).toISOString(), target: targetName(tid), location: key,
+            status: e.status, ms: e.ms, httpCode: e.httpCode, error: e.error ?? '',
+          });
+        }
+      }
+    }
+    rows.sort((a, b) => (a.time < b.time ? 1 : -1));
+    return rows;
+  }
+
+  // summary: one row per period × target × location
+  const HOUR_MS = 3600e3;
+  const step = f.granularity === 'hourly' ? HOUR_MS : DAY;
+  const bucketOf = (t) => Math.floor(t / step);
+  const acc = new Map(); // `${bucket}|${tid}|${key}` -> counters
+  const fold = (bucket, tid, key, s) => {
+    const t = bucket * step;
+    if (t + step <= f.from || t > f.to) return;
+    const id = `${bucket}|${tid}|${key}`;
+    const a = acc.get(id) ?? { bucket, tid, key, n: 0, up: 0, deg: 0, down: 0, unk: 0, msSum: 0, msN: 0 };
+    a.n += s.n; a.up += s.up; a.deg += s.deg; a.down += s.down; a.unk += s.unk;
+    a.msSum += s.msSum; a.msN += s.msN;
+    acc.set(id, a);
+  };
+  for (const [tid, byKey] of Object.entries(store.rollups)) {
+    for (const [key, byHour] of Object.entries(byKey)) {
+      if (!want(tid, key)) continue;
+      for (const [hour, s] of Object.entries(byHour)) fold(bucketOf(Number(hour) * HOUR_MS), tid, key, s);
+    }
+  }
+  if (f.granularity === 'daily') {
+    for (const [tid, byKey] of Object.entries(store.daily)) {
+      for (const [key, byDay] of Object.entries(byKey)) {
+        if (!want(tid, key)) continue;
+        for (const [day, s] of Object.entries(byDay)) fold(Number(day), tid, key, s);
+      }
+    }
+  }
+  for (const a of acc.values()) {
+    rows.push({
+      period: new Date(a.bucket * step).toISOString().slice(0, f.granularity === 'hourly' ? 13 : 10),
+      target: targetName(a.tid), location: a.key,
+      checks: a.n, up: a.up, degraded: a.deg, down: a.down, noData: a.unk,
+      uptimePct: pct(a) == null ? '' : pct(a).toFixed(3),
+      avgMs: avgMs(a) ?? '',
+    });
+  }
+  rows.sort((a, b) => (a.period < b.period ? 1 : a.period > b.period ? -1 : a.target.localeCompare(b.target)));
+  return rows;
+}
+
+function toCsv(rows) {
+  if (rows.length === 0) return 'no data for these filters\n';
+  const cols = Object.keys(rows[0]);
+  const escape = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+  };
+  return [cols.join(','), ...rows.map((r) => cols.map((c) => escape(r[c])).join(','))].join('\n') + '\n';
+}
+
+function handleReport(res, url) {
+  const f = parseReportFilters(url);
+  const rows = reportRows(f).slice(0, f.limit);
+  const stamp = new Date().toISOString().slice(0, 10);
+  if (f.format === 'csv') {
+    res.writeHead(200, {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="mirnin-report-${f.scope}-${stamp}.csv"`,
+    });
+    return res.end(toCsv(rows));
+  }
+  if (url.searchParams.get('download') === '1') {
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'content-disposition': `attachment; filename="mirnin-report-${f.scope}-${stamp}.json"`,
+    });
+    return res.end(JSON.stringify({ filters: { ...f, targets: f.targets && [...f.targets], countries: f.countries && [...f.countries] }, rows }, null, 2));
+  }
+  json(res, 200, { total: rows.length, rows });
 }
 
 // --- static files ------------------------------------------------------------

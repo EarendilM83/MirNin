@@ -397,6 +397,26 @@ footer {
 .test-result { font-size: 12.5px; margin-left: 10px; }
 .test-result.ok { color: var(--good-text); }
 .test-result.fail { color: var(--crit-text); }
+/* ---------- v4: statistics tab ---------- */
+.stats-cards { padding: 0; margin: 0 0 14px; }
+.cal-card { margin-bottom: 14px; }
+.cal-scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.cal-dows { display: grid; grid-template-rows: repeat(7, 11px); gap: 3px; flex: none; }
+.cal-dows .dow { font-size: 9px; color: var(--muted); line-height: 11px; }
+.cal {
+  display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 11px);
+  gap: 3px; align-content: start;
+}
+.cal i { width: 11px; height: 11px; border-radius: 2px; background: var(--grid-line); display: block; }
+.cal i.pad { background: transparent; }
+.cal i.g { background: var(--good); opacity: 0.55; }
+.cal i.w { background: var(--warn); }
+.cal i.c { background: var(--crit); }
+.stats-cols { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-bottom: 14px; }
+.report-card .report-form { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 4px; }
+.report-actions { display: flex; gap: 8px; align-items: center; margin: 10px 0 12px; flex-wrap: wrap; }
+.table-scroll { overflow-x: auto; }
+
 .login-overlay { align-items: center; }
 .login-box { max-width: 360px; }
 .login-note { color: var(--ink-2); font-size: 13px; margin: 0 0 14px; }
