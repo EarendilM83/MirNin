@@ -813,7 +813,11 @@
     const edit = ev.target.closest('[data-edit]');
     if (edit) { openModal(state.data.targets.find((x) => x.id === edit.dataset.edit)); return; }
 
-    if (ev.target === $('#focus-overlay')) { state.focus = null; state.focusData = null; renderFocus(); }
+    // any empty backdrop space closes the focus overlay, including the gaps
+    // beside the panel and below the location sidebar
+    if (ev.target === $('#focus-overlay') || ev.target.classList?.contains('focus-wrap')) {
+      state.focus = null; state.focusData = null; renderFocus();
+    }
     if (ev.target === $('#target-overlay')) { $('#target-overlay').hidden = true; state.editing = null; }
     if (ev.target === $('#settings-overlay')) { $('#settings-overlay').hidden = true; }
   });

@@ -257,8 +257,12 @@ tr[data-clickable]:hover td { background: var(--accent-soft); }
   color: var(--muted); margin: 0 0 8px; font-weight: 600;
 }
 
-.strip { display: flex; flex-direction: column; gap: 8px; max-height: 82vh; overflow-y: auto; }
-@media (max-width: 900px) { .strip { flex-direction: row; overflow-x: auto; max-height: none; } }
+.strip {
+  display: flex; flex-direction: column; gap: 8px;
+  position: sticky; top: 12px; align-self: start;
+  max-height: calc(100vh - 24px); overflow-y: auto;
+}
+@media (max-width: 900px) { .strip { position: static; flex-direction: row; overflow-x: auto; max-height: none; } }
 .strip-tile {
   background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
   padding: 8px 10px; cursor: pointer; display: flex; align-items: center; gap: 8px;
