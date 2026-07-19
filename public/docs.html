@@ -296,7 +296,13 @@
       plus chain validity and hostname match.</li>
       <li><strong>📅 Domain expiry</strong> — days until the domain registration lapses, registrar, and nameservers (via RDAP).</li>
       <li><strong>🛡 DNS blocklist</strong> — whether the domain/IP is on reputation or content blocklists — the thing that makes a site unreachable on filtered ISPs/resolvers. Shown as a <em>shield</em> with the list of hits.</li>
+      <li><strong>🔗 Broken-link crawl</strong> — crawls internal pages from a start URL (capped) and checks every link found; reports each broken one with its <em>source page and link text</em>, plus an overall link-health %.</li>
     </ul>
+    <p>Three surfaces exist outside the dashboard: a public <strong>status page</strong>
+    (<span class="mono">/status.html</span>) in plain language for customer service or
+    external users; a print-optimized <strong>PDF report</strong> (<span class="mono">/report.html</span>,
+    also a button on the Statistics tab); and a Prometheus <strong>/metrics</strong> endpoint so
+    engineers can scrape MirNin into an existing Grafana stack. See the README for the deployment runbook.</p>
     <p>Every type reuses the same machinery — schedule, incidents, alerts, statistics, projects/categories.
     On any detail view, <strong>“Show technical detail”</strong> reveals the raw data (redirect chain, cert
     chain, RDAP record, blocklist responses) inline, so anyone can dive as deep as they want.</p>

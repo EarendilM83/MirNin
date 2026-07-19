@@ -396,6 +396,33 @@
           <td class="num">${c.listed ? '<span class="check-bad">listed ✗</span>' : '<span class="check-ok">clean ✓</span>'}</td></tr>`).join('')}</tbody></table></div>`;
   }
 
+  function crawlViz(detail) {
+    if (!detail) return '<p class="none-note">No crawl yet.</p>';
+    const hp = detail.healthPct ?? 100;
+    const cls = detail.brokenCount === 0 ? '' : hp >= 98 ? 'deg' : 'down';
+    const bySection = {};
+    for (const b of detail.broken ?? []) {
+      const seg = (() => { try { return '/' + (new URL(b.source).pathname.split('/')[1] || ''); } catch { return '/'; } })();
+      bySection[seg] = (bySection[seg] ?? 0) + 1;
+    }
+    return `
+      <div class="rw-head"><span class="rw-days ${cls}">${hp.toFixed(1)}%</span><span class="rw-unit">of links healthy</span></div>
+      <div class="fact-grid">
+        <div class="fg"><div class="fl-label">Pages crawled</div><div class="fl-value mono">${detail.pagesCrawled}</div></div>
+        <div class="fg"><div class="fl-label">Links checked</div><div class="fl-value mono">${detail.linksChecked}</div></div>
+        <div class="fg"><div class="fl-label">Broken</div><div class="fl-value mono ${detail.brokenCount ? 'check-bad' : 'check-ok'}">${detail.brokenCount}</div></div>
+        ${Object.keys(bySection).length ? `<div class="fg"><div class="fl-label">Worst section</div><div class="fl-value mono">${esc(Object.entries(bySection).sort((a, b) => b[1] - a[1])[0][0])}</div></div>` : ''}
+      </div>
+      ${detail.broken?.length ? `<div class="list-card" style="padding:0;border:0"><table>
+        <thead><tr><th class="num">Status</th><th>Broken link</th><th>Found on page</th><th>Link text</th></tr></thead>
+        <tbody>${detail.broken.map((b) => `<tr>
+          <td class="num"><span class="check-bad">${b.error ?? 'HTTP ' + b.status}</span></td>
+          <td class="mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(b.url)}</td>
+          <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(b.source)}</td>
+          <td>${esc(b.anchor || '—')}</td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="none-note">No broken links found. 🎉</p>'}`;
+  }
+
   function linkVizBig(t) {
     const e = globalEntry(t);
     if (!e) return '<p class="none-note">Waiting for first check…</p>';
@@ -405,6 +432,7 @@
     else if (type === 'ssl') body = runwayViz(e.detail, 'ssl');
     else if (type === 'domain') body = runwayViz(e.detail, 'domain');
     else if (type === 'blocklist') body = blocklistViz(e.detail, e.status);
+    else if (type === 'crawl') body = crawlViz(e.detail);
     return `${body}
       <details class="tech-acc"><summary>Show technical detail</summary>
         <pre>${esc(JSON.stringify(e.detail ?? { error: e.error }, null, 2))}</pre></details>`;
@@ -423,6 +451,9 @@
       mid = `<span class="lc-line"><span class="lc-big ${cls}">${d ?? '—'}</span><span class="unit">days left</span></span>`;
     } else if (type === 'blocklist') {
       mid = `<span class="lc-line"><span class="lc-big ${s === 'up' ? '' : s}">${e?.detail?.listedOn?.length ? e.detail.listedOn.length : '0'}</span><span class="unit">blocklists</span></span>`;
+    } else if (type === 'crawl') {
+      const hp = e?.detail?.healthPct;
+      mid = `<span class="lc-line"><span class="lc-big ${s === 'up' ? '' : s}">${hp != null ? hp.toFixed(1) + '%' : '—'}</span><span class="unit">healthy · ${e?.detail?.brokenCount ?? 0} broken</span></span>`;
     }
     return `
       <button class="tile" data-status="${s}" data-nav-target="${t.id}">
@@ -596,6 +627,7 @@
     if (type === 'ssl') return `${d.daysLeft} days left · ${d.chainValid ? 'chain ok' : 'chain INVALID'}`;
     if (type === 'domain') return `${d.daysLeft} days until expiry · ${esc(d.registrar ?? '')}`;
     if (type === 'blocklist') return d.listedOn?.length ? `listed on ${d.listedOn.join(', ')}` : 'clean';
+    if (type === 'crawl') return `${d.brokenCount} broken of ${d.linksChecked} links · ${d.pagesCrawled} pages`;
     return '—';
   }
 
@@ -812,7 +844,9 @@
       </div>
 
       <div class="list-card report-card">
-        <h3>Download a report ${state.nav.scope !== 'all' ? '<span class="hint-inline">— scoped to your current selection</span>' : ''}</h3>
+        <div class="cat-head"><h3 style="margin:0">Download a report ${state.nav.scope !== 'all' ? '<span class="hint-inline">— scoped to your current selection</span>' : ''}</h3>
+          <span class="cat-actions"><button class="mini" id="rep-pdf">📄 PDF / print report</button></span></div>
+        <p class="rules-help" style="margin:6px 0 12px">A formatted executive summary for sharing, or the raw data as CSV/JSON below.</p>
         <div class="report-form">
           <label class="field"><span>Data</span>
             <select id="rep-scope">
@@ -862,6 +896,7 @@
     };
     $('#rep-csv').onclick = () => { location.href = reportUrl({ format: 'csv' }); };
     $('#rep-json').onclick = () => { location.href = reportUrl({ format: 'json', download: '1' }); };
+    $('#rep-pdf').onclick = () => { const q = statsParams().toString(); window.open('/report.html' + (q ? '?' + q : ''), '_blank'); };
     $('#rep-preview').onclick = async () => {
       $('#rep-count').textContent = 'loading…'; $('#rep-count').className = 'test-result';
       const res = await fetch(reportUrl({ limit: '15' }));
@@ -1113,6 +1148,7 @@
     form.expectText.value = target?.expectText ?? '';
     form.expectedFinalUrl.value = target?.expectedFinalUrl ?? '';
     form.expectParams.value = target?.expectParams ?? '';
+    form.maxPages.value = target?.maxPages ?? '';
 
     // check-type selector — locked to its type when editing an existing target
     const ct = state.data.checkTypes ?? {};
@@ -1166,7 +1202,8 @@
     $('#expecttext-field').hidden = !http;
     $('#rules-acc').hidden = !http;
     $('#redirect-fields').hidden = type !== 'redirect';
-    const labels = { http: 'URL to check', redirect: 'Link / redirect URL to follow', ssl: 'HTTPS URL (certificate is read from it)', domain: 'URL on the domain to check', blocklist: 'URL on the domain to check' };
+    $('#crawl-fields').hidden = type !== 'crawl';
+    const labels = { http: 'URL to check', redirect: 'Link / redirect URL to follow', ssl: 'HTTPS URL (certificate is read from it)', domain: 'URL on the domain to check', blocklist: 'URL on the domain to check', crawl: 'Start URL to crawl from' };
     $('#t-url-label').textContent = labels[type] ?? 'URL to check';
   }
 
@@ -1259,6 +1296,8 @@
     } else if (type === 'redirect') {
       body.expectedFinalUrl = form.expectedFinalUrl.value;
       body.expectParams = form.expectParams.value;
+    } else if (type === 'crawl') {
+      if (form.maxPages.value) body.maxPages = Number(form.maxPages.value);
     }
     const res = state.editing
       ? await fetch(`/api/targets/${state.editing.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })

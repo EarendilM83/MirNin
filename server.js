@@ -67,7 +67,7 @@ function hasValidSession(req) {
   return Boolean(exp && sig) && Number(exp) > Date.now() && safeEqual(sig, sign(exp));
 }
 
-const PUBLIC_API = new Set(['/api/login', '/api/healthz']);
+const PUBLIC_API = new Set(['/api/login', '/api/healthz', '/api/public-status']);
 
 // --- validation --------------------------------------------------------------
 
@@ -132,6 +132,11 @@ function validateTarget(body, { partial = false } = {}) {
     }
     if (body.expectParams !== undefined) {
       out.expectParams = String(body.expectParams ?? '').slice(0, 200) || null;
+    }
+    if (body.maxPages !== undefined) {
+      const n = Number(body.maxPages);
+      if (!Number.isInteger(n) || n < 1 || n > 40) errors.push('maxPages must be 1–40');
+      else out.maxPages = n;
     }
   }
   if (body.enabled !== undefined) out.enabled = Boolean(body.enabled);
@@ -266,6 +271,8 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && path === '/api/healthz') {
     return json(res, 200, { ok: true, targets: store.config.targets.length, uptimeSec: Math.round(process.uptime()) });
   }
+
+  if (req.method === 'GET' && path === '/api/public-status') return json(res, 200, buildPublicStatus());
 
   if (req.method === 'POST' && path === '/api/login') {
     if (!AUTH_ENABLED) return json(res, 200, { ok: true, authEnabled: false });
@@ -523,7 +530,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && path === '/api/targets') {
     const { errors, out } = validateTarget(await readBody(req));
     if (errors.length) return json(res, 400, { errors });
-    const target = { id: randomUUID(), enabled: true, checkType: 'http', expectText: null, expectedFinalUrl: null, expectParams: null, rules: null, categoryId: store.config.categories[0]?.id, ...out };
+    const target = { id: randomUUID(), enabled: true, checkType: 'http', expectText: null, expectedFinalUrl: null, expectParams: null, maxPages: null, rules: null, categoryId: store.config.categories[0]?.id, ...out };
     store.config.targets.push(target);
     store.saveConfig();
     scheduler.sync();
@@ -826,6 +833,88 @@ function handleReport(res, url) {
   json(res, 200, { total: rows.length, rows });
 }
 
+// --- Prometheus metrics ------------------------------------------------------
+
+const STATUS_VALUE = { up: 1, degraded: 0.5, down: 0, unknown: -1 };
+
+function serveMetrics(res) {
+  const esc = (s) => String(s ?? '').replace(/[\\"\n]/g, (c) => ({ '\\': '\\\\', '"': '\\"', '\n': ' ' }[c]));
+  const lines = [
+    '# HELP mirnin_check_up Check status (1 up, 0.5 degraded, 0 down, -1 no data)',
+    '# TYPE mirnin_check_up gauge',
+  ];
+  const latency = ['# HELP mirnin_check_latency_ms Last check latency', '# TYPE mirnin_check_latency_ms gauge'];
+  const uptime = ['# HELP mirnin_uptime_ratio_24h Uptime ratio over 24h', '# TYPE mirnin_uptime_ratio_24h gauge'];
+  let down = 0, degraded = 0;
+  for (const t of store.config.targets) {
+    const proj = store.projectOf(t), cat = store.categoryOf(t);
+    for (const loc of t.locations) {
+      const key = locKey(loc);
+      const hist = store.history(t.id, key, 1);
+      const e = hist[hist.length - 1];
+      if (!e) continue;
+      const lbl = `{project="${esc(proj?.name)}",category="${esc(cat?.name)}",target="${esc(t.name)}",type="${esc(t.checkType ?? 'http')}",location="${esc(key)}"}`;
+      lines.push(`mirnin_check_up${lbl} ${STATUS_VALUE[e.status] ?? -1}`);
+      if (e.ms != null) latency.push(`mirnin_check_latency_ms${lbl} ${e.ms}`);
+      const u = store.uptime(t.id, key, DAY);
+      if (u != null) uptime.push(`mirnin_uptime_ratio_24h${lbl} ${(u / 100).toFixed(5)}`);
+      if (e.status === 'down') down++; else if (e.status === 'degraded') degraded++;
+    }
+  }
+  const totals = [
+    '# HELP mirnin_targets_total Number of monitored targets', '# TYPE mirnin_targets_total gauge',
+    `mirnin_targets_total ${store.config.targets.length}`,
+    '# HELP mirnin_probes_down Probes currently down', '# TYPE mirnin_probes_down gauge',
+    `mirnin_probes_down ${down}`,
+    '# HELP mirnin_probes_degraded Probes currently degraded', '# TYPE mirnin_probes_degraded gauge',
+    `mirnin_probes_degraded ${degraded}`,
+  ];
+  res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' });
+  res.end([...lines, ...latency, ...uptime, ...totals].join('\n') + '\n');
+}
+
+// --- public status (no auth) -------------------------------------------------
+
+const linkSummaryText = (t, e) => {
+  const d = e?.detail;
+  if (!d) return e?.error ?? '';
+  const type = t.checkType;
+  if (type === 'redirect') return d.finalOk ? (d.paramsOk ? 'link working' : 'link works, tracking params dropped') : 'redirect broken';
+  if (type === 'ssl') return d.daysLeft != null ? `certificate valid ${d.daysLeft} more days` : 'certificate';
+  if (type === 'domain') return d.daysLeft != null ? `domain renews in ${d.daysLeft} days` : 'domain';
+  if (type === 'blocklist') return d.listedOn?.length ? `on ${d.listedOn.length} blocklist(s)` : 'reputation clean';
+  if (type === 'crawl') return `${d.brokenCount} broken of ${d.linksChecked} links`;
+  return '';
+};
+
+function worstOf(list) {
+  const rank = { down: 0, degraded: 1, unknown: 2, up: 3 };
+  let w = null;
+  for (const s of list) if (w == null || rank[s] < rank[w]) w = s;
+  return w ?? 'unknown';
+}
+
+function buildPublicStatus() {
+  const targetStatus = (t) => {
+    const states = t.locations.map((loc) => {
+      const h = store.history(t.id, locKey(loc), 1);
+      return h[h.length - 1]?.status ?? 'unknown';
+    });
+    return worstOf(states);
+  };
+  const projects = store.config.projects.map((p) => {
+    const cats = store.config.categories.filter((c) => c.projectId === p.id).map((c) => {
+      const ts = store.config.targets.filter((t) => t.categoryId === c.id).map((t) => {
+        const h = store.history(t.id, locKey(t.locations[0]), 1);
+        return { name: t.name, type: t.checkType ?? 'http', status: targetStatus(t), summary: linkSummaryText(t, h[h.length - 1]) };
+      });
+      return { name: c.name, status: worstOf(ts.map((x) => x.status)), targets: ts };
+    }).filter((c) => c.targets.length);
+    return { name: p.name, status: worstOf(cats.flatMap((c) => c.targets.map((t) => t.status))), categories: cats };
+  }).filter((p) => p.categories.length);
+  return { generatedAt: Date.now(), overall: worstOf(projects.map((p) => p.status)), projects };
+}
+
 // --- static files ------------------------------------------------------------
 
 const MIME = {
@@ -853,6 +942,7 @@ async function serveStatic(res, path) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
+    if (url.pathname === '/metrics') return serveMetrics(res);
     if (url.pathname.startsWith('/api/')) await handleApi(req, res, url);
     else await serveStatic(res, url.pathname);
   } catch (err) {

@@ -83,17 +83,51 @@ Set `ADMIN_PASSWORD` to require a login. Sessions are HMAC-signed cookies
 the variable the dashboard stays open (fine on localhost) and shows an
 "Unprotected" notice. Always set it before exposing the monitor to a network.
 
-## Deploying (Docker)
+## Deploying (Docker) — full runbook
+
+MirNin only monitors while it is running, so put it on an always-on host.
 
 ```bash
-ADMIN_PASSWORD=change-me docker compose up -d --build
-# or: docker build -t mirnin-monitor . && docker run -d -p 4000:4000 \
-#     -e ADMIN_PASSWORD=change-me -v monitor-data:/app/data mirnin-monitor
+# 1. On any small VPS (1 vCPU / 1 GB is plenty) with Docker installed:
+git clone <your-fork> mirnin && cd mirnin
+
+# 2. Pick a strong admin password and (optionally) a Globalping token:
+echo "ADMIN_PASSWORD=$(openssl rand -hex 12)" >  .env
+echo "GLOBALPING_TOKEN="                        >> .env   # paste later in Settings too
+
+# 3. Launch (persists data in a Docker volume, restarts on reboot/crash):
+docker compose up -d --build
+
+# 4. Put it behind HTTPS. Easiest: a reverse proxy that terminates TLS —
+#    Caddy needs just two lines:
+#        monitor.example.com {
+#            reverse_proxy localhost:4000
+#        }
+#    (or use your existing nginx/Traefik). Never expose :4000 directly on the
+#    internet without TLS — the login password would travel in clear text.
+
+# 5. Watch the watcher: point a free external uptime service (UptimeRobot,
+#    Better Uptime, a second tiny box) at:
+#        https://monitor.example.com/api/healthz
+#    If MirNin's own host dies, nothing else will tell you.
 ```
 
-Works on any $5 VPS or container host. `GET /api/healthz` is unauthenticated
-and made for an external watchdog (UptimeRobot or similar) — a monitor nobody
-watches when *it* dies is a blind spot, so point something at it.
+Then open the dashboard, sign in, and in **Settings** paste your Globalping
+token and alert webhook. Add your first URLs and check types.
+
+Bare-metal alternative (no Docker): `ADMIN_PASSWORD=... node server.js` behind
+the same reverse proxy; use a process manager (systemd/pm2) to keep it up.
+
+## Public surfaces
+
+- **`/status.html`** — a public, plain-language status page (no login) for
+  customer service or external users: one line per service with a plain summary.
+- **`/report.html`** — a print-optimized executive report (uses your login);
+  open it and “Save as PDF” from the browser. Linked from the Statistics tab.
+- **`/metrics`** — Prometheus exposition (no login) so your engineers can scrape
+  MirNin into an existing Grafana/Prometheus stack (`mirnin_check_up`,
+  `mirnin_check_latency_ms`, `mirnin_uptime_ratio_24h`, `mirnin_probes_down`).
+- **`/api/healthz`** — liveness for an external watchdog.
 
 ## Configuration
 
@@ -137,6 +171,7 @@ and statistics:
 | 🔒 SSL certificate | days to expiry, chain validity, hostname match | runway bar |
 | 📅 Domain expiry | registration expiry, registrar, nameservers (RDAP) | runway bar |
 | 🛡 DNS blocklist | reputation/content blocklist hits | shield + list |
+| 🔗 Broken-link crawl | crawls internal pages, checks every link | health % + broken table (source page + anchor) |
 
 The redirect/SSL/domain/blocklist checks use only Node's standard library. The
 filter bar (type · status · country) reshapes the dashboard to answer questions
