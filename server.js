@@ -11,6 +11,7 @@ import { Scheduler } from './lib/scheduler.js';
 import { Alerter } from './lib/alerts.js';
 import { globalpingStatus } from './lib/checker.js';
 import { classifyWith, validateRules, effectiveRules, rulesProvenance, DEFAULT_RULES } from './lib/rules.js';
+import { CHECK_TYPES } from './lib/linkchecks.js';
 import { COUNTRIES, isValidCountry } from './lib/countries.js';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
@@ -110,10 +111,28 @@ function validateTarget(body, { partial = false } = {}) {
       errors.push(`intervalSeconds must be between ${MIN_INTERVAL} and 86400`);
     } else out.intervalSeconds = n;
   }
-  if (body.locations !== undefined || !partial) {
-    const locations = parseLocations(body.locations);
-    if (!locations) errors.push('locations must be a non-empty list of {country, isp?} with known country codes');
-    else out.locations = locations;
+  const checkType = body.checkType ?? (partial ? undefined : 'http');
+  if (checkType !== undefined) {
+    if (!Object.hasOwn(CHECK_TYPES, checkType)) errors.push('unknown checkType');
+    else out.checkType = checkType;
+  }
+  const effectiveType = out.checkType ?? checkType ?? 'http';
+  if (effectiveType === 'http') {
+    if (body.locations !== undefined || !partial) {
+      const locations = parseLocations(body.locations);
+      if (!locations) errors.push('locations must be a non-empty list of {country, isp?} with known country codes');
+      else out.locations = locations;
+    }
+  } else {
+    // non-http checks run domain-wide from a single vantage
+    out.locations = [{ country: 'GLOBAL', isp: null }];
+    if (body.expectedFinalUrl !== undefined) {
+      const s = String(body.expectedFinalUrl ?? '').trim().slice(0, 500);
+      out.expectedFinalUrl = s === '' ? null : s;
+    }
+    if (body.expectParams !== undefined) {
+      out.expectParams = String(body.expectParams ?? '').slice(0, 200) || null;
+    }
   }
   if (body.enabled !== undefined) out.enabled = Boolean(body.enabled);
   if (body.categoryId !== undefined) {
@@ -150,6 +169,7 @@ function outcomeOf(e) {
 function reclassify(targetIds = null) {
   for (const t of store.config.targets) {
     if (targetIds && !targetIds.has(t.id)) continue;
+    if (t.checkType && t.checkType !== 'http') continue; // link checks self-classify
     const rules = store.effectiveRulesFor(t);
     store.reclassifyTarget(t.id, (key, e) => classifyWith(outcomeOf(e), rules, store.baseline7d(t.id, key)));
   }
@@ -161,6 +181,7 @@ function stateSnapshot() {
   const s = store.config.settings;
   return {
     countries: COUNTRIES,
+    checkTypes: CHECK_TYPES,
     authEnabled: AUTH_ENABLED,
     defaultRules: DEFAULT_RULES,
     // a project inherits from global; a category from global + its project
@@ -502,7 +523,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && path === '/api/targets') {
     const { errors, out } = validateTarget(await readBody(req));
     if (errors.length) return json(res, 400, { errors });
-    const target = { id: randomUUID(), enabled: true, expectText: null, rules: null, categoryId: store.config.categories[0]?.id, ...out };
+    const target = { id: randomUUID(), enabled: true, checkType: 'http', expectText: null, expectedFinalUrl: null, expectParams: null, rules: null, categoryId: store.config.categories[0]?.id, ...out };
     store.config.targets.push(target);
     store.saveConfig();
     scheduler.sync();

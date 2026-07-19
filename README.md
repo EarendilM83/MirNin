@@ -124,6 +124,24 @@ Targets and settings live in `data/config.json`; recent results are flushed to
 | `POST /api/targets/:id/check` | Run a check immediately |
 | `PUT /api/settings` | `{provider: "auto" | "simulated"}` |
 
+## Check types
+
+Beyond reachability, a target can be one of several check types (chosen in the
+"What to check" selector), all sharing the same scheduling, incidents, alerts,
+and statistics:
+
+| Type | What it watches | Visualization |
+|---|---|---|
+| 🌍 Reachability | URL up from countries/ISPs | tiles + latency |
+| ↪ Redirect / link | full redirect chain ends where expected, tracking params survive | journey strip |
+| 🔒 SSL certificate | days to expiry, chain validity, hostname match | runway bar |
+| 📅 Domain expiry | registration expiry, registrar, nameservers (RDAP) | runway bar |
+| 🛡 DNS blocklist | reputation/content blocklist hits | shield + list |
+
+The redirect/SSL/domain/blocklist checks use only Node's standard library. The
+filter bar (type · status · country) reshapes the dashboard to answer questions
+directly; every detail view has a "Show technical detail" expander.
+
 ## Roadmap
 
 - Complex flows: scripted browser journeys (login → search → checkout) via

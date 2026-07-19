@@ -128,6 +128,7 @@
     <a class="lvl2" href="#playbook">What to do when…</a>
     <a class="lvl2" href="#stats">Statistics &amp; reports</a>
     <a class="part" href="#admin">Part 2 · For admins</a>
+    <a class="lvl2" href="#checktypes">Check types &amp; filters</a>
     <a class="lvl2" href="#add-url">Adding a URL to watch</a>
     <a class="lvl2" href="#locations">Countries &amp; providers</a>
     <a class="lvl2" href="#focus">The focus view</a>
@@ -283,6 +284,27 @@
     re-classifies real stored checks under your draft rules before you save, so you can see
     the effect immediately. When rules change, the recent (~48 h) history is re-classified;
     older aggregates keep their original classification.</p>
+
+    <h2 id="checktypes">Check types &amp; the filter bar</h2>
+    <p>A monitored item isn't only "is this URL reachable." When you add one, the
+    <strong>What to check</strong> selector chooses its type:</p>
+    <ul>
+      <li><strong>🌍 Reachability</strong> — the original: is the URL up, from the countries/ISPs you pick.</li>
+      <li><strong>↪ Redirect / link</strong> — follows a link through every hop (promo → tracker → landing),
+      shown as a <em>journey strip</em>, and checks it ends where expected with the tracking parameters intact. For affiliate and promo links.</li>
+      <li><strong>🔒 SSL certificate</strong> — days until the certificate expires (a <em>runway bar</em>),
+      plus chain validity and hostname match.</li>
+      <li><strong>📅 Domain expiry</strong> — days until the domain registration lapses, registrar, and nameservers (via RDAP).</li>
+      <li><strong>🛡 DNS blocklist</strong> — whether the domain/IP is on reputation or content blocklists — the thing that makes a site unreachable on filtered ISPs/resolvers. Shown as a <em>shield</em> with the list of hits.</li>
+    </ul>
+    <p>Every type reuses the same machinery — schedule, incidents, alerts, statistics, projects/categories.
+    On any detail view, <strong>“Show technical detail”</strong> reveals the raw data (redirect chain, cert
+    chain, RDAP record, blocklist responses) inline, so anyone can dive as deep as they want.</p>
+    <p>The <strong>filter bar</strong> above the dashboard is how you ask questions without knowing anything
+    technical: narrow by <strong>type · status · country</strong>, and the view reshapes to just the matching
+    URLs across whatever the sidebar has selected. “Show me everything that needs attention” is one dropdown;
+    “only the blocklist checks” is another. Filters compose, and switching between Dashboard and Statistics
+    keeps them.</p>
 
     <h2 id="add-url">Adding a URL to watch</h2>
     <div class="steps">
