@@ -18,6 +18,7 @@
     nav: { scope: 'all', projectId: null, categoryId: null, targetId: null },
     lens: 'dash',            // 'dash' | 'stats'
     view: 'grid',            // 'grid' | 'list'
+    filters: { type: 'all', status: 'all', country: 'all' },
     sideOpen: new Set(),
     stats: null, statsKey: null, statsAt: 0,
     focus: null, range: '1h', focusData: null,
@@ -115,6 +116,61 @@
   }
 
   const pill = (s) => `<span class="pill" data-s="${s}"><span class="dot" aria-hidden="true"></span>${STATUS_LABEL[s]}</span>`;
+  const typeOf = (t) => t.checkType ?? 'http';
+  const typeMeta = (t) => (state.data.checkTypes ?? {})[typeOf(t)] ?? { label: typeOf(t), glyph: '•' };
+  const isLink = (t) => typeOf(t) !== 'http';
+  const globalEntry = (t) => latestOf(t.results?.GLOBAL ?? { history: [] });
+
+  // ---------- filtering ------------------------------------------------------
+
+  function filtersActive() {
+    const f = state.filters;
+    return f.type !== 'all' || f.status !== 'all' || f.country !== 'all';
+  }
+
+  function matchesFilters(t) {
+    const f = state.filters;
+    if (f.type !== 'all' && typeOf(t) !== f.type) return false;
+    if (f.country !== 'all' && !t.locations.some((l) => l.country === f.country)) return false;
+    if (f.status !== 'all') {
+      const s = worstStatus(t);
+      if (f.status === 'issues' && !(s === 'down' || s === 'degraded')) return false;
+      if (['up', 'degraded', 'down', 'unknown'].includes(f.status) && s !== f.status) return false;
+    }
+    return true;
+  }
+
+  function renderFilterBar() {
+    const bar = $('#filter-bar');
+    if (state.nav.targetId || state.lens === 'stats') { bar.innerHTML = ''; return; }
+    const scope = targetsInScope();
+    const types = [...new Set(scope.map(typeOf))];
+    const countries = [...new Set(scope.flatMap((t) => t.locations.map((l) => l.country)).filter((c) => c !== 'GLOBAL'))];
+    const ct = state.data.checkTypes ?? {};
+    const opt = (v, label, sel) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${label}</option>`;
+    const matched = scope.filter(matchesFilters).length;
+    bar.innerHTML = `
+      <span class="fl"><label for="f-type">Type</label>
+        <select id="f-type">${opt('all', 'All types', state.filters.type)}
+          ${types.map((tp) => opt(tp, `${ct[tp]?.glyph ?? ''} ${ct[tp]?.label ?? tp}`, state.filters.type)).join('')}</select></span>
+      <span class="fl"><label for="f-status">Status</label>
+        <select id="f-status">
+          ${opt('all', 'Any status', state.filters.status)}
+          ${opt('issues', '⚠ Needs attention', state.filters.status)}
+          ${opt('down', 'Down', state.filters.status)}
+          ${opt('degraded', 'Degraded', state.filters.status)}
+          ${opt('up', 'Operational', state.filters.status)}
+          ${opt('unknown', 'No data', state.filters.status)}
+        </select></span>
+      ${countries.length ? `<span class="fl"><label for="f-country">Country</label>
+        <select id="f-country">${opt('all', 'All countries', state.filters.country)}
+          ${countries.map((c) => opt(c, `${(state.data.countries[c] ?? { flag: '' }).flag} ${c}`, state.filters.country)).join('')}</select></span>` : ''}
+      ${filtersActive() ? `<span class="fl-count">${matched} match${matched === 1 ? '' : 'es'}</span><button class="clear" id="f-clear">Clear filters</button>` : ''}`;
+    $('#f-type').onchange = (e) => { state.filters.type = e.target.value; render(); };
+    $('#f-status').onchange = (e) => { state.filters.status = e.target.value; render(); };
+    if ($('#f-country')) $('#f-country').onchange = (e) => { state.filters.country = e.target.value; render(); };
+    if ($('#f-clear')) $('#f-clear').onclick = () => { state.filters = { type: 'all', status: 'all', country: 'all' }; render(); };
+  }
 
   // ---------- navigation -----------------------------------------------------
 
@@ -146,6 +202,7 @@
     renderSidebar();
     renderCrumb();
     renderLens();
+    renderFilterBar();
     renderSummary();
     renderMain();
     renderFocus();
@@ -251,9 +308,10 @@
     }
     if (state.lens === 'stats') { renderStats(main); return; }
     if (state.view === 'list') { renderList(main); return; }
+    if (filtersActive()) { renderFilteredFlat(main); return; }
     if (state.nav.scope === 'all') renderDashAll(main);
     else renderDashProject(main);
-    $('#foot').textContent = 'Click a card to drill in. ⌘K jumps anywhere.';
+    $('#foot').textContent = 'Click a card to drill in. Filters above reshape the view. ⌘K jumps anywhere.';
   }
 
   // ---------- dashboards -----------------------------------------------------
@@ -280,7 +338,104 @@
     }).join('')}</div>`;
   }
 
+  // ---------- link-check visualizations --------------------------------------
+
+  const hopClass = (h) => (h.error || h.status >= 500 ? 'down' : h.status >= 400 ? 'down' : 'deg');
+
+  function journeyStrip(detail, mini) {
+    if (!detail?.hops) return '';
+    const hostOf = (u) => { try { return new URL(u).host + new URL(u).pathname; } catch { return u; } };
+    const hops = detail.hops.map((h) => {
+      const cls = h.error ? 'down' : (h.status >= 400 ? 'down' : 'up');
+      return `<div class="hop ${cls === 'up' ? '' : cls}">
+        <span class="hu mono">${esc(hostOf(h.url))}</span>
+        <span class="hm">${h.error ? esc(h.error) : `${h.status} · ${h.ms} ms`}</span></div>`;
+    }).join('<span class="arrow">→</span>');
+    const params = !mini && detail.params?.length ? `<div class="params-row">${detail.params.map((p) =>
+      `<span class="param-chip ${p.present ? 'ok' : 'miss'}">${p.present ? '✓' : '✗'} ${esc(p.name)}</span>`).join('')}</div>` : '';
+    const finalNote = !mini && detail.expectedFinalUrl ? `<div class="tile-foot" style="margin-top:8px">Expected end: <span class="mono">${esc(detail.expectedFinalUrl)}</span> — ${detail.finalOk ? '<span class="check-ok">reached ✓</span>' : '<span class="check-bad">not reached ✗</span>'}</div>` : '';
+    return `<div class="journey ${mini ? 'mini' : ''}">${hops}</div>${params}${finalNote}`;
+  }
+
+  function runwayViz(detail, kind) {
+    if (!detail) return '<p class="none-note">No data yet.</p>';
+    const d = detail.daysLeft;
+    const warn = kind === 'ssl' ? 14 : 30;
+    const full = kind === 'ssl' ? 90 : 365;
+    const cls = d == null ? '' : d <= 0 ? 'down' : d < warn ? 'deg' : '';
+    const pctFill = d == null ? 0 : Math.max(4, Math.min(100, (d / full) * 100));
+    const facts = kind === 'ssl'
+      ? [['Issuer', esc(detail.issuer ?? '—')], ['Hostname match', detail.hostnameMatch ? '<span class="check-ok">yes ✓</span>' : '<span class="check-bad">no ✗</span>'],
+         ['Chain valid', detail.chainValid ? '<span class="check-ok">yes ✓</span>' : `<span class="check-bad">no ✗</span>`], ['Valid to', esc((detail.validTo ?? '').slice(0, 16))]]
+      : [['Registrar', esc(detail.registrar ?? '—')], ['Expires', esc((detail.expiry ?? '').slice(0, 10))],
+         ['Nameservers', esc((detail.nameservers ?? []).slice(0, 2).join(', ') || '—')], ['Status', esc((detail.statuses ?? [])[0] ?? '—')]];
+    return `
+      <div class="runway">
+        <div class="rw-head"><span class="rw-days ${cls}">${d == null ? '—' : d}</span><span class="rw-unit">days ${d != null && d <= 0 ? 'past expiry' : 'until expiry'}</span></div>
+        <div class="rw-track"><div class="rw-fill ${cls}" style="width:${pctFill}%"></div></div>
+        <div class="rw-marks"><span>now</span><span>${warn}d warning</span><span>${full}d</span></div>
+      </div>
+      <div class="fact-grid">${facts.map(([l, v]) => `<div class="fg"><div class="fl-label">${l}</div><div class="fl-value">${v}</div></div>`).join('')}</div>`;
+  }
+
+  function blocklistViz(detail, status) {
+    if (!detail) return '<p class="none-note">No data yet.</p>';
+    const glyph = status === 'up' ? '🛡' : '⚠';
+    const cls = status === 'up' ? 'up' : status === 'down' ? 'down' : 'deg';
+    const msg = detail.listedOn?.length
+      ? `Listed on ${detail.listedOn.length} blocklist${detail.listedOn.length > 1 ? 's' : ''} — some networks/resolvers are told to block this domain.`
+      : 'Clean — not on any monitored blocklist.';
+    return `
+      <div class="shield-row">
+        <div class="shield ${cls}">${glyph}</div>
+        <div class="shield-text"><div class="st-big">${detail.listedOn?.length ? esc(detail.listedOn.join(', ')) : 'Not listed'}</div>
+          <div class="st-sub">${msg} · resolves to <span class="mono">${esc(detail.resolvedIp ?? '—')}</span></div></div>
+      </div>
+      <div class="list-card" style="padding:0;border:0"><table><thead><tr><th>Blocklist</th><th>Severity</th><th class="num">Status</th></tr></thead>
+        <tbody>${(detail.checked ?? []).map((c) => `<tr><td>${esc(c.label)} <span class="lz mono">${esc(c.zone)}</span></td><td>${c.severity === 'down' ? 'blocking' : 'advisory'}</td>
+          <td class="num">${c.listed ? '<span class="check-bad">listed ✗</span>' : '<span class="check-ok">clean ✓</span>'}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  function linkVizBig(t) {
+    const e = globalEntry(t);
+    if (!e) return '<p class="none-note">Waiting for first check…</p>';
+    const type = typeOf(t);
+    let body = '';
+    if (type === 'redirect') body = journeyStrip(e.detail, false);
+    else if (type === 'ssl') body = runwayViz(e.detail, 'ssl');
+    else if (type === 'domain') body = runwayViz(e.detail, 'domain');
+    else if (type === 'blocklist') body = blocklistViz(e.detail, e.status);
+    return `${body}
+      <details class="tech-acc"><summary>Show technical detail</summary>
+        <pre>${esc(JSON.stringify(e.detail ?? { error: e.error }, null, 2))}</pre></details>`;
+  }
+
+  function linkCard(t) {
+    const e = globalEntry(t);
+    const s = e?.status ?? 'unknown';
+    const type = typeOf(t);
+    const meta = typeMeta(t);
+    let mid = '';
+    if (type === 'redirect') mid = journeyStrip(e?.detail, true);
+    else if (type === 'ssl' || type === 'domain') {
+      const d = e?.detail?.daysLeft;
+      const cls = d == null ? '' : d <= 0 ? 'down' : d < (type === 'ssl' ? 14 : 30) ? 'deg' : '';
+      mid = `<span class="lc-line"><span class="lc-big ${cls}">${d ?? '—'}</span><span class="unit">days left</span></span>`;
+    } else if (type === 'blocklist') {
+      mid = `<span class="lc-line"><span class="lc-big ${s === 'up' ? '' : s}">${e?.detail?.listedOn?.length ? e.detail.listedOn.length : '0'}</span><span class="unit">blocklists</span></span>`;
+    }
+    return `
+      <button class="tile" data-status="${s}" data-nav-target="${t.id}">
+        <span class="tile-head"><span class="cname">${meta.glyph} ${esc(t.name)}</span><span class="type-badge">${esc(meta.label)}</span></span>
+        <span class="tile-metric" style="min-height:0">${pill(s)}</span>
+        ${mid}
+        ${e?.error ? `<span class="tile-err" title="${esc(e.error)}">${esc(e.error)}</span>` : ''}
+        <span class="tile-foot"><span>every ${intervalLabel(t.intervalSeconds)}${t.enabled ? '' : ' · paused'}</span><span>${e ? fmtTime(e.t) : 'waiting'}</span></span>
+      </button>`;
+  }
+
   function targetCard(t) {
+    if (isLink(t)) return linkCard(t);
     const s = worstStatus(t);
     const med = medianLatency(t);
     const divs = divergences(t);
@@ -362,6 +517,7 @@
 
   function renderTargetView(main, t) {
     const incidents = t.incidents ?? [];
+    if (isLink(t)) { renderLinkTargetView(main, t); return; }
     const customRules = Object.keys(t.rules ?? {}).length;
     main.innerHTML = `
       <div class="target-bar">
@@ -397,9 +553,63 @@
     $('#foot').textContent = 'Click a location tile to pin it: latency anatomy, week heatmap, and check log.';
   }
 
+  function renderLinkTargetView(main, t) {
+    const meta = typeMeta(t);
+    const e = globalEntry(t);
+    const slot = t.results?.GLOBAL ?? { history: [] };
+    const incidents = t.incidents ?? [];
+    main.innerHTML = `
+      <div class="target-bar">
+        <span class="url mono">${esc(t.url)}</span>
+        <span>· ${meta.glyph} ${esc(meta.label)} · every ${intervalLabel(t.intervalSeconds)}</span>
+        ${t.expectedFinalUrl ? `<span>· ends at ${esc(t.expectedFinalUrl)}</span>` : ''}
+        <span class="countdown" data-count="${t.id}"></span>
+        <span class="actions">
+          <button class="ghost" data-check="${t.id}">Check now</button>
+          <button class="ghost" data-pause="${t.id}">${t.enabled ? 'Pause' : 'Resume'}</button>
+          <button class="ghost" data-edit="${t.id}">Edit</button>
+        </span>
+      </div>
+      <div class="focus-stats" style="margin:0 0 6px">
+        <div class="fs"><div class="label">Status</div><div class="value">${pill(e?.status ?? 'unknown')}</div></div>
+        <div class="fs"><div class="label">Uptime · 24 h</div><div class="value mono">${fmtUptime(slot.uptime24h)}</div></div>
+        <div class="fs"><div class="label">Uptime · 30 d</div><div class="value mono">${fmtUptime(slot.uptime30d)}</div></div>
+        <div class="fs"><div class="label">Last check</div><div class="value mono" style="font-size:15px">${e ? fmtTime(e.t) : '—'}</div></div>
+      </div>
+      <div class="list-card">${linkVizBig(t)}</div>
+      <div class="incidents">
+        <h3>Recent checks</h3>
+        <div class="list-card"><table><thead><tr><th>Time</th><th>Result</th><th>Detail</th></tr></thead>
+          <tbody>${slot.history.slice(-12).reverse().map((h) => `<tr>
+            <td class="mono">${fmtTime(h.t)}</td><td>${pill(h.status)}</td>
+            <td>${esc(linkSummary(t, h))}</td></tr>`).join('') || '<tr><td colspan="3" class="none-note">No checks yet.</td></tr>'}</tbody>
+        </table></div>
+      </div>`;
+    $('#foot').textContent = 'Everything here is one check. “Show technical detail” reveals the raw data.';
+  }
+
+  function linkSummary(t, h) {
+    const d = h.detail;
+    if (!d) return h.error ?? '—';
+    const type = typeOf(t);
+    if (type === 'redirect') return `${d.hops?.length ?? 0} hops → ${d.finalOk ? 'final reached' : 'final NOT reached'}${d.paramsOk ? '' : ', params dropped'}`;
+    if (type === 'ssl') return `${d.daysLeft} days left · ${d.chainValid ? 'chain ok' : 'chain INVALID'}`;
+    if (type === 'domain') return `${d.daysLeft} days until expiry · ${esc(d.registrar ?? '')}`;
+    if (type === 'blocklist') return d.listedOn?.length ? `listed on ${d.listedOn.join(', ')}` : 'clean';
+    return '—';
+  }
+
+  function renderFilteredFlat(main) {
+    const matched = targetsInScope().filter(matchesFilters);
+    main.innerHTML = matched.length === 0
+      ? '<div class="empty"><h2>Nothing matches these filters</h2><p>Try widening the type or status filter above.</p></div>'
+      : `<div class="grid">${matched.map(targetCard).join('')}</div>`;
+    $('#foot').textContent = `${matched.length} URL${matched.length === 1 ? '' : 's'} match your filters. Click any to drill in.`;
+  }
+
   function renderList(main) {
     const rows = [];
-    for (const t of targetsInScope()) {
+    for (const t of targetsInScope().filter(matchesFilters)) {
       for (const [key, slot] of tiles(t)) {
         const e = latestOf(slot);
         const li = locLabel(slot.loc);
@@ -901,6 +1111,17 @@
     form.url.value = target?.url ?? '';
     form.intervalSeconds.value = String(target?.intervalSeconds ?? 300);
     form.expectText.value = target?.expectText ?? '';
+    form.expectedFinalUrl.value = target?.expectedFinalUrl ?? '';
+    form.expectParams.value = target?.expectParams ?? '';
+
+    // check-type selector — locked to its type when editing an existing target
+    const ct = state.data.checkTypes ?? {};
+    $('#t-checktype').innerHTML = Object.entries(ct).map(([k, m]) =>
+      `<option value="${k}">${m.glyph} ${esc(m.label)}</option>`).join('');
+    $('#t-checktype').value = target?.checkType ?? 'http';
+    $('#t-checktype').disabled = Boolean(target);
+    applyCheckTypeVisibility($('#t-checktype').value);
+    $('#t-checktype').onchange = (e) => applyCheckTypeVisibility(e.target.value);
 
     // category options grouped by project
     $('#t-category').innerHTML = projects().map((p) =>
@@ -937,6 +1158,16 @@
     renderLocRows();
     $('#target-overlay').hidden = false;
     form.name.focus();
+  }
+
+  function applyCheckTypeVisibility(type) {
+    const http = type === 'http';
+    $('#locations-field').hidden = !http;
+    $('#expecttext-field').hidden = !http;
+    $('#rules-acc').hidden = !http;
+    $('#redirect-fields').hidden = type !== 'redirect';
+    const labels = { http: 'URL to check', redirect: 'Link / redirect URL to follow', ssl: 'HTTPS URL (certificate is read from it)', domain: 'URL on the domain to check', blocklist: 'URL on the domain to check' };
+    $('#t-url-label').textContent = labels[type] ?? 'URL to check';
   }
 
   function collectRulesDraft() {
@@ -1013,15 +1244,22 @@
   async function submitTargetModal(ev) {
     ev.preventDefault();
     const form = $('#target-form');
+    const type = $('#t-checktype').value;
     const body = {
       name: form.name.value,
       url: form.url.value,
+      checkType: type,
       intervalSeconds: Number(form.intervalSeconds.value),
-      expectText: form.expectText.value,
       categoryId: form.categoryId.value,
-      locations: state.editLocs,
-      rules: collectRulesDraft(),
     };
+    if (type === 'http') {
+      body.expectText = form.expectText.value;
+      body.locations = state.editLocs;
+      body.rules = collectRulesDraft();
+    } else if (type === 'redirect') {
+      body.expectedFinalUrl = form.expectedFinalUrl.value;
+      body.expectParams = form.expectParams.value;
+    }
     const res = state.editing
       ? await fetch(`/api/targets/${state.editing.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       : await fetch('/api/targets', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

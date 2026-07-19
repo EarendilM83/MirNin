@@ -44,6 +44,7 @@
           </div>
         </div>
       </div>
+      <div class="filter-bar" id="filter-bar"></div>
       <div class="summary" id="summary"></div>
       <main id="main"></main>
       <footer id="foot"></footer>
@@ -62,6 +63,10 @@
   <div class="overlay" id="target-overlay" hidden>
     <form class="modal" id="target-form" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <h2 id="modal-title">Add URL</h2>
+      <label class="field">
+        <span>What to check</span>
+        <select name="checkType" id="t-checktype"></select>
+      </label>
       <div class="field-row">
         <label class="field">
           <span>Name</span>
@@ -73,9 +78,19 @@
         </label>
       </div>
       <label class="field">
-        <span>URL to check</span>
+        <span id="t-url-label">URL to check</span>
         <input name="url" type="url" placeholder="https://example.com/health" required>
       </label>
+      <div id="redirect-fields" hidden>
+        <label class="field">
+          <span>Expected final URL <em class="hint-inline">the chain must end here</em></span>
+          <input name="expectedFinalUrl" maxlength="500" placeholder="https://app.example.com/landing">
+        </label>
+        <label class="field">
+          <span>Tracking params that must survive <em class="hint-inline">comma-separated, optional</em></span>
+          <input name="expectParams" maxlength="200" placeholder="utm_source, cid">
+        </label>
+      </div>
       <label class="field">
         <span>Check every</span>
         <select name="intervalSeconds">
@@ -87,13 +102,13 @@
           <option value="3600">1 hour</option>
         </select>
       </label>
-      <div class="field">
+      <div class="field" id="locations-field">
         <span>Check from <em class="hint-inline">country, optionally pinned to one provider — add the same country twice to compare ISPs</em></span>
         <div id="loc-rows"></div>
         <button type="button" class="ghost" id="btn-add-loc">+ Add location</button>
         <p class="providers-hint" id="providers-hint" hidden></p>
       </div>
-      <label class="field">
+      <label class="field" id="expecttext-field">
         <span>Expect text in response <em class="hint-inline">optional — catches block pages that return 200</em></span>
         <input name="expectText" maxlength="200" placeholder="e.g. MirNin">
       </label>
