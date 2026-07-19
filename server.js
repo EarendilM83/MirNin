@@ -10,6 +10,7 @@ import { Store, locKey, parseLocKey } from './lib/store.js';
 import { Scheduler } from './lib/scheduler.js';
 import { Alerter } from './lib/alerts.js';
 import { globalpingStatus } from './lib/checker.js';
+import { classifyWith, validateRules, effectiveRules, rulesProvenance, DEFAULT_RULES } from './lib/rules.js';
 import { COUNTRIES, isValidCountry } from './lib/countries.js';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
@@ -115,16 +116,43 @@ function validateTarget(body, { partial = false } = {}) {
     else out.locations = locations;
   }
   if (body.enabled !== undefined) out.enabled = Boolean(body.enabled);
-  if (body.degradedMs !== undefined) {
-    const n = Number(body.degradedMs);
-    if (!Number.isInteger(n) || n < 100 || n > 60000) errors.push('degradedMs must be 100–60000');
-    else out.degradedMs = n;
+  if (body.categoryId !== undefined) {
+    if (!store.config.categories.some((c) => c.id === body.categoryId)) errors.push('unknown category');
+    else out.categoryId = body.categoryId;
+  }
+  if (body.rules !== undefined) {
+    const r = validateRules(body.rules ?? {});
+    errors.push(...r.errors);
+    if (r.errors.length === 0) {
+      const cleaned = Object.fromEntries(Object.entries(r.out).filter(([, v]) => v !== null));
+      out.rules = Object.keys(cleaned).length ? cleaned : null;
+    }
   }
   if (body.expectText !== undefined) {
     const s = String(body.expectText ?? '').slice(0, 200);
     out.expectText = s.trim() === '' ? null : s;
   }
   return { errors, out };
+}
+
+// --- rules reclassification --------------------------------------------------
+
+// Entry -> raw facts for re-classification. The synthetic content-mismatch
+// message must not read as a network error, and 'unknown' stays unknown.
+function outcomeOf(e) {
+  return {
+    unknown: e.status === 'unknown',
+    error: e.contentOk === false && e.error === 'expected content not found in response' ? null : e.error,
+    httpCode: e.httpCode, ms: e.ms, contentOk: e.contentOk,
+  };
+}
+
+function reclassify(targetIds = null) {
+  for (const t of store.config.targets) {
+    if (targetIds && !targetIds.has(t.id)) continue;
+    const rules = store.effectiveRulesFor(t);
+    store.reclassifyTarget(t.id, (key, e) => classifyWith(outcomeOf(e), rules, store.baseline7d(t.id, key)));
+  }
 }
 
 // --- API ---------------------------------------------------------------------
@@ -134,6 +162,9 @@ function stateSnapshot() {
   return {
     countries: COUNTRIES,
     authEnabled: AUTH_ENABLED,
+    defaultRules: DEFAULT_RULES,
+    projects: store.config.projects,
+    categories: store.config.categories,
     settings: {
       ...s,
       // never echo the full token back to the browser
@@ -142,6 +173,15 @@ function stateSnapshot() {
     globalping: globalpingStatus(),
     targets: store.config.targets.map((t) => ({
       ...t,
+      effectiveRules: store.effectiveRulesFor(t),
+      // what the target would inherit if it had no overrides of its own —
+      // the admin form shows these as placeholders
+      inheritedRules: effectiveRules(store.config.settings.rules,
+        store.projectOf(t)?.rules, store.categoryOf(t)?.rules),
+      rulesProvenance: rulesProvenance([
+        { label: 'global', rules: store.config.settings.rules },
+        ...store.ruleLayers(t),
+      ]),
       nextRunAt: scheduler.getNextRunAt(t.id),
       incidents: store.incidentsFor(t.id, 12),
       results: Object.fromEntries(t.locations.map((loc) => {
@@ -258,9 +298,117 @@ async function handleApi(req, res, url) {
     });
   }
 
-  if (req.method === 'GET' && path === '/api/stats') return json(res, 200, buildStats());
+  if (req.method === 'GET' && path === '/api/stats') {
+    return json(res, 200, buildStats(url.searchParams.get('project'), url.searchParams.get('category')));
+  }
 
   if (req.method === 'GET' && path === '/api/report') return handleReport(res, url);
+
+  // ---- projects & categories ----
+  if (req.method === 'POST' && path === '/api/projects') {
+    const body = await readBody(req);
+    const name = String(body.name ?? '').trim();
+    if (!name || name.length > 60) return json(res, 400, { errors: ['project name is required (max 60 chars)'] });
+    const webhookUrl = String(body.webhookUrl ?? '').trim();
+    if (webhookUrl && !/^https?:\/\//.test(webhookUrl)) return json(res, 400, { errors: ['webhook URL must start with http(s)://'] });
+    const project = { id: randomUUID(), name, webhookUrl: webhookUrl || null, rules: null };
+    store.config.projects.push(project);
+    store.config.categories.push({ id: randomUUID(), projectId: project.id, name: 'General', rules: null });
+    store.saveConfig();
+    broadcast('config', {});
+    return json(res, 201, project);
+  }
+  const projMatch = path.match(/^\/api\/projects\/([\w-]+)$/);
+  if (projMatch) {
+    const project = store.config.projects.find((p) => p.id === projMatch[1]);
+    if (!project) return json(res, 404, { errors: ['project not found'] });
+    if (req.method === 'PUT') {
+      const body = await readBody(req);
+      if (body.name !== undefined) {
+        const name = String(body.name ?? '').trim();
+        if (!name || name.length > 60) return json(res, 400, { errors: ['project name is required (max 60 chars)'] });
+        project.name = name;
+      }
+      if (body.webhookUrl !== undefined) {
+        const u = String(body.webhookUrl ?? '').trim();
+        if (u && !/^https?:\/\//.test(u)) return json(res, 400, { errors: ['webhook URL must start with http(s)://'] });
+        project.webhookUrl = u || null;
+      }
+      store.saveConfig();
+      broadcast('config', {});
+      return json(res, 200, project);
+    }
+    if (req.method === 'DELETE') {
+      if (store.targetIdsForScope(project.id, null).size > 0) {
+        return json(res, 400, { errors: ['project still contains URLs — move or delete them first'] });
+      }
+      if (store.config.projects.length === 1) return json(res, 400, { errors: ['the last project cannot be deleted'] });
+      store.config.projects = store.config.projects.filter((p) => p.id !== project.id);
+      store.config.categories = store.config.categories.filter((c) => c.projectId !== project.id);
+      store.saveConfig();
+      broadcast('config', {});
+      return json(res, 200, { ok: true });
+    }
+  }
+  if (req.method === 'POST' && path === '/api/categories') {
+    const body = await readBody(req);
+    const name = String(body.name ?? '').trim();
+    if (!name || name.length > 60) return json(res, 400, { errors: ['category name is required (max 60 chars)'] });
+    if (!store.config.projects.some((p) => p.id === body.projectId)) return json(res, 400, { errors: ['unknown project'] });
+    const category = { id: randomUUID(), projectId: body.projectId, name, rules: null };
+    store.config.categories.push(category);
+    store.saveConfig();
+    broadcast('config', {});
+    return json(res, 201, category);
+  }
+  const catMatch = path.match(/^\/api\/categories\/([\w-]+)$/);
+  if (catMatch) {
+    const category = store.config.categories.find((c) => c.id === catMatch[1]);
+    if (!category) return json(res, 404, { errors: ['category not found'] });
+    if (req.method === 'PUT') {
+      const body = await readBody(req);
+      const name = String(body.name ?? '').trim();
+      if (!name || name.length > 60) return json(res, 400, { errors: ['category name is required (max 60 chars)'] });
+      category.name = name;
+      store.saveConfig();
+      broadcast('config', {});
+      return json(res, 200, category);
+    }
+    if (req.method === 'DELETE') {
+      if (store.config.targets.some((t) => t.categoryId === category.id)) {
+        return json(res, 400, { errors: ['category still contains URLs — move or delete them first'] });
+      }
+      store.config.categories = store.config.categories.filter((c) => c.id !== category.id);
+      store.saveConfig();
+      broadcast('config', {});
+      return json(res, 200, { ok: true });
+    }
+  }
+
+  // ---- rules preview: reclassify the last 24h under a draft policy ----
+  if (req.method === 'POST' && path === '/api/rules-preview') {
+    const body = await readBody(req);
+    const target = store.config.targets.find((t) => t.id === body.targetId);
+    if (!target) return json(res, 404, { errors: ['target not found'] });
+    const draft = validateRules(body.rules ?? {});
+    if (draft.errors.length) return json(res, 400, { errors: draft.errors });
+    const draftLayer = Object.fromEntries(Object.entries(draft.out).filter(([, v]) => v !== null));
+    const cat = store.categoryOf(target);
+    const proj = store.projectOf(target);
+    const proposed = effectiveRules(store.config.settings.rules, proj?.rules, cat?.rules, draftLayer);
+    const cutoff = Date.now() - DAY;
+    const count = () => ({ up: 0, degraded: 0, down: 0, unknown: 0, total: 0 });
+    const current = count(), withDraft = count();
+    for (const [key, list] of Object.entries(store.results[target.id] ?? {})) {
+      const baseline = store.baseline7d(target.id, key);
+      for (const e of list) {
+        if (e.t < cutoff) continue;
+        current[e.status]++; current.total++;
+        withDraft[classifyWith(outcomeOf(e), proposed, baseline)]++; withDraft.total++;
+      }
+    }
+    return json(res, 200, { current, withDraft });
+  }
 
   const probeMatch = path.match(/^\/api\/probes\/([A-Z]{2})$/);
   if (req.method === 'GET' && probeMatch) {
@@ -274,7 +422,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && path === '/api/targets') {
     const { errors, out } = validateTarget(await readBody(req));
     if (errors.length) return json(res, 400, { errors });
-    const target = { id: randomUUID(), enabled: true, expectText: null, ...out };
+    const target = { id: randomUUID(), enabled: true, expectText: null, rules: null, categoryId: store.config.categories[0]?.id, ...out };
     store.config.targets.push(target);
     store.saveConfig();
     scheduler.sync();
@@ -297,6 +445,7 @@ async function handleApi(req, res, url) {
       Object.assign(target, out);
       store.saveConfig();
       scheduler.sync();
+      if ('rules' in out || 'expectText' in out || 'categoryId' in out) reclassify(new Set([target.id]));
       broadcast('config', {});
       return json(res, 200, target);
     }
@@ -322,6 +471,15 @@ async function handleApi(req, res, url) {
     if (body.globalpingToken !== undefined) {
       const t = String(body.globalpingToken ?? '').trim();
       if (!t.startsWith('••••')) s.globalpingToken = t === '' ? null : t.slice(0, 200);
+    }
+    if (body.rules !== undefined) {
+      const r = validateRules(body.rules ?? {});
+      if (r.errors.length) return json(res, 400, { errors: r.errors });
+      for (const [k, v] of Object.entries(r.out)) {
+        if (v === null) delete s.rules[k];
+        else s.rules[k] = v;
+      }
+      reclassify();
     }
     if (body.alerts !== undefined && typeof body.alerts === 'object') {
       const a = body.alerts;
@@ -354,18 +512,22 @@ const pct = (acc) => {
 const avgMs = (acc) => (acc.msN > 0 ? Math.round(acc.msSum / acc.msN) : null);
 const targetName = (id) => store.config.targets.find((t) => t.id === id)?.name ?? id;
 
-function buildStats() {
+function buildStats(projectId = null, categoryId = null) {
+  const tset = projectId || categoryId ? store.targetIdsForScope(projectId, categoryId) : null;
+  const inScope = (tid) => !tset || tset.has(tid);
+  const agg = (windowMs, groupFn) => store.aggregate(windowMs, (tid, key) => (inScope(tid) ? groupFn(tid, key) : null));
+
   const overall = {};
   for (const [label, ms] of [['24h', DAY], ['7d', 7 * DAY], ['30d', 30 * DAY]]) {
-    const acc = store.aggregate(ms, () => 'all').get('all') ?? { n: 0, unk: 0, up: 0, deg: 0, msSum: 0, msN: 0 };
+    const acc = agg(ms, () => 'all').get('all') ?? { n: 0, unk: 0, up: 0, deg: 0, msSum: 0, msN: 0 };
     overall[label] = { uptime: pct(acc), checks: acc.n, avgMs: avgMs(acc) };
   }
   const cutoff30 = Date.now() - 30 * DAY;
-  const recent = store.incidents.filter((i) => i.startT >= cutoff30);
+  const recent = store.incidents.filter((i) => i.startT >= cutoff30 && inScope(i.targetId));
   const closed = recent.filter((i) => i.endT != null);
   const mttrMs = closed.length ? closed.reduce((a, i) => a + (i.endT - i.startT), 0) / closed.length : null;
 
-  const byCountry = [...store.aggregate(30 * DAY, (tid, key) => parseLocKey(key).country)]
+  const byCountry = [...agg(30 * DAY, (tid, key) => parseLocKey(key).country)]
     .map(([country, acc]) => ({
       country,
       uptime30d: pct(acc), avgMs: avgMs(acc), checks: acc.n,
@@ -374,7 +536,7 @@ function buildStats() {
     .filter((r) => r.checks > 0)
     .sort((a, b) => (a.uptime30d ?? 101) - (b.uptime30d ?? 101));
 
-  const byTarget = [...store.aggregate(30 * DAY, (tid) => tid)]
+  const byTarget = [...agg(30 * DAY, (tid) => tid)]
     .map(([tid, acc]) => ({
       id: tid, name: targetName(tid),
       uptime30d: pct(acc), avgMs: avgMs(acc), checks: acc.n,
@@ -383,12 +545,45 @@ function buildStats() {
     .filter((r) => store.config.targets.some((t) => t.id === r.id))
     .sort((a, b) => (a.uptime30d ?? 101) - (b.uptime30d ?? 101));
 
+  // Category breakdown when scoped to a project; project comparison when global.
+  let byCategory = null;
+  let byProject = null;
+  if (projectId) {
+    byCategory = [...agg(30 * DAY, (tid) => store.config.targets.find((t) => t.id === tid)?.categoryId)]
+      .map(([cid, acc]) => ({
+        id: cid,
+        name: store.config.categories.find((c) => c.id === cid)?.name ?? cid,
+        uptime30d: pct(acc), avgMs: avgMs(acc), checks: acc.n,
+        incidents: recent.filter((i) => store.config.targets.find((t) => t.id === i.targetId)?.categoryId === cid).length,
+      }))
+      .filter((r) => r.checks > 0)
+      .sort((a, b) => (a.uptime30d ?? 101) - (b.uptime30d ?? 101));
+  } else if (!categoryId) {
+    const projOf = (tid) => {
+      const t = store.config.targets.find((x) => x.id === tid);
+      return t ? store.projectOf(t)?.id : null;
+    };
+    const perProj = agg(30 * DAY, (tid) => projOf(tid));
+    byProject = store.config.projects.map((p) => {
+      const acc = perProj.get(p.id) ?? { n: 0, unk: 0, up: 0, deg: 0, msSum: 0, msN: 0 };
+      return {
+        id: p.id, name: p.name,
+        uptime30d: pct(acc), avgMs: avgMs(acc), checks: acc.n,
+        incidents: store.incidents.filter((i) => i.startT >= cutoff30 && projOf(i.targetId) === p.id).length,
+        days: store.dailySeries(371, { targets: store.targetIdsForScope(p.id, null) }),
+      };
+    }).sort((a, b) => (a.uptime30d ?? 101) - (b.uptime30d ?? 101));
+  }
+
   return {
+    scope: { projectId, categoryId },
     overall,
     incidents30d: { count: recent.length, open: recent.filter((i) => i.endT == null).length, mttrMs },
-    days: store.dailySeries(371),
+    days: store.dailySeries(371, tset ? { targets: tset } : {}),
     byCountry,
     byTarget,
+    byCategory,
+    byProject,
   };
 }
 
@@ -401,10 +596,16 @@ function parseReportFilters(url) {
     return Number.isNaN(t) ? fallback : t;
   };
   const csv = (s) => (s ? new Set(s.split(',').map((x) => x.trim()).filter(Boolean)) : null);
+  let targets = csv(q.get('targets'));
+  const projectId = q.get('project'), categoryId = q.get('category');
+  if (projectId || categoryId) {
+    const scoped = store.targetIdsForScope(projectId, categoryId);
+    targets = targets ? new Set([...targets].filter((t) => scoped.has(t))) : scoped;
+  }
   return {
     from: parseDate(q.get('from'), now - 30 * DAY),
     to: parseDate(q.get('to'), now) + (q.get('to')?.length === 10 ? DAY - 1 : 0), // inclusive end date
-    targets: csv(q.get('targets')),
+    targets,
     countries: csv(q.get('countries')),
     scope: ['summary', 'raw', 'incidents'].includes(q.get('scope')) ? q.get('scope') : 'summary',
     granularity: q.get('granularity') === 'hourly' ? 'hourly' : 'daily',

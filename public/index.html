@@ -15,6 +15,7 @@
     </div>
     <span class="net-note" id="net-note" hidden></span>
     <div class="spacer"></div>
+    <button class="ghost" id="btn-search" title="Jump to any project or URL">Search <span class="kbd">⌘K</span></button>
     <div class="interval">
       <label for="provider">Probes</label>
       <select id="provider">
@@ -22,21 +23,32 @@
         <option value="simulated">Simulated (demo)</option>
       </select>
     </div>
-    <div class="seg" role="group" aria-label="View">
-      <button id="btn-grid" aria-pressed="true">Grid</button>
-      <button id="btn-list" aria-pressed="false">List</button>
-    </div>
     <a class="ghost btn-link" href="/docs.html">Docs</a>
     <button class="ghost" id="btn-settings">Settings</button>
     <button class="primary" id="btn-add">+ Add URL</button>
   </header>
 
-  <nav class="tabs" id="tabs" aria-label="Targets"></nav>
-  <div class="summary" id="summary"></div>
-
-  <main id="main"></main>
-
-  <footer id="foot"></footer>
+  <div class="shell">
+    <nav class="sidebar" id="sidebar" aria-label="Projects"></nav>
+    <div class="main-col">
+      <div class="crumb-row">
+        <nav class="crumb" id="crumb" aria-label="Breadcrumb"></nav>
+        <div class="lens-row">
+          <div class="seg" id="lens" role="group" aria-label="View">
+            <button data-lens="dash" aria-pressed="true">Dashboard</button>
+            <button data-lens="stats" aria-pressed="false">Statistics</button>
+          </div>
+          <div class="seg" id="layout-seg" role="group" aria-label="Layout">
+            <button id="btn-grid" aria-pressed="true">Grid</button>
+            <button id="btn-list" aria-pressed="false">List</button>
+          </div>
+        </div>
+      </div>
+      <div class="summary" id="summary"></div>
+      <main id="main"></main>
+      <footer id="foot"></footer>
+    </div>
+  </div>
 
   <!-- focus overlay -->
   <div class="overlay" id="focus-overlay" hidden>
@@ -50,13 +62,19 @@
   <div class="overlay" id="target-overlay" hidden>
     <form class="modal" id="target-form" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <h2 id="modal-title">Add URL</h2>
-      <label class="field">
-        <span>Name</span>
-        <input name="name" maxlength="60" placeholder="MirNin production" required>
-      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>Name</span>
+          <input name="name" maxlength="60" placeholder="Main site" required>
+        </label>
+        <label class="field">
+          <span>Category</span>
+          <select name="categoryId" id="t-category"></select>
+        </label>
+      </div>
       <label class="field">
         <span>URL to check</span>
-        <input name="url" type="url" placeholder="https://app.mirnin.com/health" required>
+        <input name="url" type="url" placeholder="https://example.com/health" required>
       </label>
       <label class="field">
         <span>Check every</span>
@@ -79,15 +97,34 @@
         <span>Expect text in response <em class="hint-inline">optional — catches block pages that return 200</em></span>
         <input name="expectText" maxlength="200" placeholder="e.g. MirNin">
       </label>
-      <label class="field">
-        <span>Mark as degraded when slower than</span>
-        <select name="degradedMs">
-          <option value="1000">1 second</option>
-          <option value="2000" selected>2 seconds</option>
-          <option value="5000">5 seconds</option>
-          <option value="10000">10 seconds</option>
-        </select>
-      </label>
+
+      <details class="rules-acc" id="rules-acc">
+        <summary>Status rules <span class="hint-inline" id="rules-note">— using defaults</span></summary>
+        <p class="rules-help">Leave a field empty to inherit the default shown in gray. Filled fields override for this URL only.</p>
+        <div class="field-row">
+          <label class="field"><span>Passed when HTTP status is</span><input name="r_passedCodes" placeholder=""></label>
+          <label class="field"><span>Degraded when HTTP status is</span><input name="r_degradedCodes" placeholder=""></label>
+        </div>
+        <label class="field check-field">
+          <span class="check-line"><input type="checkbox" name="r_treat403"> Treat 403 as reachable <em class="hint-inline">our WAF blocks monitoring probes</em></span>
+        </label>
+        <div class="field-row">
+          <label class="field"><span>Latency threshold mode</span>
+            <select name="r_latencyMode"><option value="">inherit</option><option value="fixed">Fixed value</option><option value="adaptive">Adaptive (× location baseline)</option></select></label>
+          <label class="field"><span>Fixed threshold (ms)</span><input name="r_latencyMs" type="number" min="100" max="60000" placeholder=""></label>
+          <label class="field"><span>Adaptive factor (×)</span><input name="r_adaptiveFactor" type="number" min="1.5" max="20" step="0.5" placeholder=""></label>
+        </div>
+        <div class="field-row">
+          <label class="field"><span>Timeout (ms)</span><input name="r_timeoutMs" type="number" min="1000" max="60000" placeholder=""></label>
+          <label class="field"><span>Missing expected content means</span>
+            <select name="r_contentFail"><option value="">inherit</option><option value="down">Down</option><option value="degraded">Degraded</option><option value="ignore">Ignore</option></select></label>
+        </div>
+        <div class="report-actions">
+          <button type="button" class="ghost" id="btn-rules-preview">Preview against last 24 h</button>
+          <span class="test-result" id="rules-preview-out"></span>
+        </div>
+      </details>
+
       <p class="form-error" id="form-error" hidden></p>
       <div class="modal-actions">
         <button type="button" class="danger" id="btn-delete" hidden>Delete</button>
@@ -103,9 +140,30 @@
     <form class="modal" id="settings-form" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <h2 id="settings-title">Settings</h2>
 
+      <h3 class="modal-section">Status rules — defaults for every URL</h3>
+      <p class="rules-help">Any project, category, or URL can override these individually.</p>
+      <div class="field-row">
+        <label class="field"><span>Passed when HTTP status is</span><input name="d_passedCodes"></label>
+        <label class="field"><span>Degraded when HTTP status is</span><input name="d_degradedCodes"></label>
+      </div>
+      <label class="field check-field">
+        <span class="check-line"><input type="checkbox" name="d_treat403"> Treat 403 as reachable <em class="hint-inline">our WAF blocks monitoring probes</em></span>
+      </label>
+      <div class="field-row">
+        <label class="field"><span>Latency mode</span>
+          <select name="d_latencyMode"><option value="fixed">Fixed value</option><option value="adaptive">Adaptive (× baseline)</option></select></label>
+        <label class="field"><span>Fixed threshold (ms)</span><input name="d_latencyMs" type="number" min="100" max="60000"></label>
+        <label class="field"><span>Adaptive factor (×)</span><input name="d_adaptiveFactor" type="number" min="1.5" max="20" step="0.5"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Timeout (ms)</span><input name="d_timeoutMs" type="number" min="1000" max="60000"></label>
+        <label class="field"><span>Missing expected content means</span>
+          <select name="d_contentFail"><option value="down">Down</option><option value="degraded">Degraded</option><option value="ignore">Ignore</option></select></label>
+      </div>
+
       <h3 class="modal-section">Alerts</h3>
       <label class="field">
-        <span>Webhook URL <em class="hint-inline">Slack incoming webhook or any endpoint accepting {"text": …} JSON</em></span>
+        <span>Webhook URL <em class="hint-inline">Slack incoming webhook or any endpoint accepting {"text": …} JSON; projects can override</em></span>
         <input name="webhookUrl" maxlength="500" placeholder="https://hooks.slack.com/services/…">
       </label>
       <div class="field-row">
@@ -139,6 +197,48 @@
         <button type="submit" class="primary">Save</button>
       </div>
     </form>
+  </div>
+
+  <!-- project modal -->
+  <div class="overlay" id="project-overlay" hidden>
+    <form class="modal" id="project-form" role="dialog" aria-modal="true" aria-labelledby="project-title">
+      <h2 id="project-title">New project</h2>
+      <label class="field"><span>Name</span><input name="name" maxlength="60" placeholder="FortuneJack" required></label>
+      <label class="field">
+        <span>Alert webhook <em class="hint-inline">optional — overrides the global webhook for this project's alerts</em></span>
+        <input name="webhookUrl" maxlength="500" placeholder="https://hooks.slack.com/services/…">
+      </label>
+      <p class="form-error" id="project-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="danger" id="btn-project-delete" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" id="btn-project-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- category modal -->
+  <div class="overlay" id="category-overlay" hidden>
+    <form class="modal" id="category-form" role="dialog" aria-modal="true" aria-labelledby="category-title">
+      <h2 id="category-title">New category</h2>
+      <label class="field"><span>Name</span><input name="name" maxlength="60" placeholder="Payments" required></label>
+      <p class="form-error" id="category-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="danger" id="btn-category-delete" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" id="btn-category-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- quick jump (⌘K) -->
+  <div class="overlay cmdk-overlay" id="cmdk-overlay" hidden>
+    <div class="modal cmdk" role="dialog" aria-modal="true" aria-label="Quick jump">
+      <input id="cmdk-input" placeholder="Jump to project, category, or URL…" autocomplete="off">
+      <div class="cmdk-list" id="cmdk-list"></div>
+    </div>
   </div>
 
   <!-- login screen -->

@@ -162,10 +162,16 @@
 
     <h2 id="reading">Reading the dashboard</h2>
     <ul>
-      <li><strong>Tabs across the top</strong> — one tab per thing we monitor (“target”), e.g.
-      the main site, the payments API. The colored dot on each tab is the target's worst
-      current status, so a problem is visible before you even open the tab. <strong>Overview</strong>
-      shows every target as one summary tile.</li>
+      <li><strong>Sidebar on the left</strong> — everything is organized as
+      <em>projects → categories → URLs</em> (e.g. FortuneJack → Payments → cashier page).
+      Every level carries a colored dot showing the worst status inside it, so bad news is
+      visible even on collapsed items. <strong>All projects</strong> at the top shows one
+      summary card per project; click anything to drill in, and the breadcrumb above the
+      content always shows where you are. Press <strong>⌘K</strong> (Ctrl+K) to jump to any
+      project, category, or URL by name.</li>
+      <li><strong>Dashboard / Statistics</strong> — the two lenses at the top right apply to
+      whatever the sidebar has selected: pick a project, and both the dashboard and the
+      statistics show only that project.</li>
       <li><strong>Summary strip</strong> — how many probes are green / yellow / red right now,
       and the median response time.</li>
       <li><strong>Tiles</strong> — each tile is one location watching one URL: country flag and
@@ -248,6 +254,25 @@
     </ul>
 
     <div class="part-label" id="part2">Part 2 · For admins</div>
+
+    <h2 id="projects">Projects, categories &amp; status rules</h2>
+    <p><strong>Projects</strong> group what you monitor by product or brand; <strong>categories</strong>
+    group URLs inside a project (Core pages, Payments, Promo campaigns…). Create them from the
+    sidebar (“+ New project”, “+ category”); a URL's category is picked in its edit form.
+    Each project can have its <strong>own alert webhook</strong> — its alerts go to that
+    channel, prefixed <span class="mono">[Project · Category]</span>, others fall back to the
+    global webhook. Empty categories and projects can be deleted; non-empty ones are protected.</p>
+    <p><strong>Status rules</strong> define what Operational / Degraded / Down mean. Global
+    defaults live in Settings → “Status rules”; any URL can override individual fields in its
+    edit form (empty field = inherit, shown in gray). The rules cover: which HTTP codes count
+    as passed or degraded, a <strong>“Treat 403 as reachable”</strong> shortcut for WAFs that
+    block monitoring probes, the latency threshold — fixed, or <strong>adaptive</strong>
+    (“slower than N× this location's own 7-day baseline”, so Brazil isn't judged by
+    Frankfurt's standards) — the timeout, and whether a failed content assertion means Down,
+    Degraded, or is ignored. The <strong>“Preview against last 24 h”</strong> button
+    re-classifies real stored checks under your draft rules before you save, so you can see
+    the effect immediately. When rules change, the recent (~48 h) history is re-classified;
+    older aggregates keep their original classification.</p>
 
     <h2 id="add-url">Adding a URL to watch</h2>
     <div class="steps">
@@ -402,8 +427,11 @@
         <tr><td class="mono">GET /api/events</td><td>SSE stream: <span class="mono">result</span>, <span class="mono">config</span>, <span class="mono">incident</span> events</td></tr>
         <tr><td class="mono">GET /api/history?target=&amp;loc=</td><td>48 h raw + 30 d hourly rollups for one tile</td></tr>
         <tr><td class="mono">GET /api/probes/:CC</td><td>Providers with live probes in a country (cached 10 min)</td></tr>
-        <tr><td class="mono">GET /api/stats</td><td>Merged statistics: overall uptimes, daily series (calendar), by-country and by-target aggregates</td></tr>
-        <tr><td class="mono">GET /api/report</td><td>Filterable export: <span class="mono">scope=summary|raw|incidents · granularity=daily|hourly · from · to · targets · countries · format=json|csv</span></td></tr>
+        <tr><td class="mono">GET /api/stats</td><td>Merged statistics (calendar, by-project/category/country/target); scope with <span class="mono">?project= / ?category=</span></td></tr>
+        <tr><td class="mono">GET /api/report</td><td>Filterable export: <span class="mono">scope=summary|raw|incidents · granularity=daily|hourly · from · to · targets · countries · project · category · format=json|csv</span></td></tr>
+        <tr><td class="mono">POST/PUT/DELETE /api/projects[/:id]</td><td>Manage projects (name, per-project alert webhook)</td></tr>
+        <tr><td class="mono">POST/PUT/DELETE /api/categories[/:id]</td><td>Manage categories within a project</td></tr>
+        <tr><td class="mono">POST /api/rules-preview</td><td>Re-classify a target's last 24 h under draft status rules</td></tr>
         <tr><td class="mono">POST /api/targets</td><td>Create target <span class="mono">{name, url, intervalSeconds, locations:[{country, isp?}], degradedMs?, expectText?}</span></td></tr>
         <tr><td class="mono">PUT /api/targets/:id</td><td>Edit (partial body, incl. <span class="mono">{enabled}</span>)</td></tr>
         <tr><td class="mono">DELETE /api/targets/:id</td><td>Remove target and its history</td></tr>
