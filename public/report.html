@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MirNin — Monitoring report</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+<style>
+  :root { --ink: #111; --ink-2: #555; --muted: #888; --line: #ddd; --good: #087f08; --warn: #9a6a00; --crit: #b32626; --accent: #2a78d6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f4f4f2; color: var(--ink); font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .sheet { max-width: 800px; margin: 20px auto; background: #fff; padding: 40px 48px 60px; box-shadow: 0 1px 6px rgba(0,0,0,0.12); }
+  .toolbar { max-width: 800px; margin: 20px auto 0; display: flex; gap: 10px; align-items: center; }
+  .toolbar button { font: inherit; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 8px; padding: 8px 16px; cursor: pointer; }
+  .toolbar .hint { color: var(--muted); font-size: 13px; }
+  h1 { font-size: 24px; margin: 0 0 2px; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 26px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); border-bottom: 2px solid var(--line); padding-bottom: 6px; margin: 30px 0 12px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+  .card .l { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .card .v { font-size: 26px; font-weight: 700; }
+  .v.warn { color: var(--warn); } .v.crit { color: var(--crit); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--line); padding: 6px 10px 6px 0; }
+  td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  td.num, th.num { text-align: right; }
+  .crit-c { color: var(--crit); }
+  .foot { margin-top: 34px; color: var(--muted); font-size: 12px; }
+  @media print {
+    body { background: #fff; }
+    .toolbar { display: none; }
+    .sheet { box-shadow: none; margin: 0; max-width: none; padding: 0; }
+    @page { margin: 18mm; }
+  }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button onclick="window.print()">Print / Save as PDF</button>
+  <span class="hint">Use your browser's “Save as PDF” in the print dialog.</span>
+</div>
+<div class="sheet" id="sheet"><p class="meta">Loading report…</p></div>
+<script>
+  const fmtU = (u) => u == null ? '—' : u.toFixed(u >= 99.995 ? 0 : 2) + '%';
+  const fmtMttr = (ms) => ms == null ? '—' : ms < 3600e3 ? Math.round(ms / 60000) + ' m' : (ms / 3600e3).toFixed(1) + ' h';
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  async function load() {
+    const qs = location.search || '';
+    let s;
+    try {
+      const res = await fetch('/api/stats' + qs);
+      if (res.status === 401) { document.getElementById('sheet').innerHTML = '<p class="meta">Please sign in to the dashboard first, then reopen this report.</p>'; return; }
+      s = await res.json();
+    } catch { document.getElementById('sheet').innerHTML = '<p class="meta">Could not load report data.</p>'; return; }
+    const table = (title, rows, nameOf) => !rows || !rows.length ? '' : `
+      <h2>${title}</h2><table><thead><tr><th>Name</th><th class="num">Uptime 30d</th><th class="num">Avg ms</th><th class="num">Incidents</th></tr></thead>
+      <tbody>${rows.map((r) => `<tr><td>${nameOf(r)}</td><td class="num ${r.uptime30d != null && r.uptime30d < 99 ? 'crit-c' : ''}">${fmtU(r.uptime30d)}</td><td class="num">${r.avgMs ?? '—'}</td><td class="num">${r.incidents}</td></tr>`).join('')}</tbody></table>`;
+    document.getElementById('sheet').innerHTML = `
+      <h1>Monitoring report</h1>
+      <p class="meta">Generated ${new Date().toLocaleString()}${qs ? ' · scoped view' : ' · all projects'}</p>
+      <div class="cards">
+        <div class="card"><div class="l">Uptime · 24 h</div><div class="v">${fmtU(s.overall['24h'].uptime)}</div></div>
+        <div class="card"><div class="l">Uptime · 7 d</div><div class="v">${fmtU(s.overall['7d'].uptime)}</div></div>
+        <div class="card"><div class="l">Uptime · 30 d</div><div class="v">${fmtU(s.overall['30d'].uptime)}</div></div>
+        <div class="card"><div class="l">Checks · 30 d</div><div class="v">${s.overall['30d'].checks.toLocaleString()}</div></div>
+        <div class="card"><div class="l">Incidents · 30 d</div><div class="v ${s.incidents30d.count ? 'warn' : ''}">${s.incidents30d.count}</div></div>
+        <div class="card"><div class="l">Avg repair time</div><div class="v">${fmtMttr(s.incidents30d.mttrMs)}</div></div>
+      </div>
+      ${table('By project', s.byProject, (r) => esc(r.name))}
+      ${table('By category', s.byCategory, (r) => esc(r.name))}
+      ${table('By country', s.byCountry, (r) => esc(r.country))}
+      ${table('By target', s.byTarget, (r) => esc(r.name))}
+      <p class="foot">MirNin Monitor · uptime counts non-down checks over known checks; “no data” periods are excluded.</p>`;
+  }
+  load();
+</script>
+</body>
+</html>

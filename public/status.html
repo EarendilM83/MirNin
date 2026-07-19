@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service status — MirNin</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+<style>
+  :root {
+    color-scheme: light dark;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --line: #e1e0d9; --ring: rgba(11,11,11,0.10);
+    --good: #0ca30c; --good-t: #006300; --warn: #fab219; --warn-t: #7a5200; --crit: #d03b3b; --crit-t: #a32222;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #fff; --ink-2: #c3c2b7; --line: #2c2c2a; --ring: rgba(255,255,255,0.10);
+    --good-t: #0ca30c; --warn-t: #fab219; --crit-t: #e66767;
+  } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+  .banner { display: flex; align-items: center; gap: 14px; border-radius: 14px; padding: 18px 22px; margin-bottom: 26px; border: 1px solid var(--ring); }
+  .banner .dot { width: 18px; height: 18px; border-radius: 50%; flex: none; }
+  .banner.up { background: color-mix(in srgb, var(--good) 12%, var(--surface)); } .banner.up .dot { background: var(--good); }
+  .banner.degraded { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); } .banner.degraded .dot { background: var(--warn); }
+  .banner.down { background: color-mix(in srgb, var(--crit) 12%, var(--surface)); } .banner.down .dot { background: var(--crit); }
+  .banner .bt { font-size: 18px; font-weight: 650; }
+  .banner .bs { font-size: 13px; color: var(--ink-2); }
+  .proj { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px; overflow: hidden; background: var(--surface); }
+  .proj-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .proj-head .pn { font-weight: 650; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 14px; }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row .rn { flex: 1; }
+  .row .rs { font-size: 12.5px; color: var(--muted); }
+  .cat-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 10px 16px 2px; }
+  .sdot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .sdot.up { background: var(--good); } .sdot.degraded { background: var(--warn); } .sdot.down { background: var(--crit); } .sdot.unknown { background: var(--muted); }
+  .pill { font-size: 12px; font-weight: 600; }
+  .pill.up { color: var(--good-t); } .pill.degraded { color: var(--warn-t); } .pill.down { color: var(--crit-t); } .pill.unknown { color: var(--muted); }
+  .foot { color: var(--muted); font-size: 12px; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Service status</h1>
+  <p class="sub">Live view of whether our services are reachable and healthy. Refreshes automatically.</p>
+  <div id="content"><p class="sub">Loading…</p></div>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+  const LABEL = { up: 'All systems operational', degraded: 'Some services degraded', down: 'Service disruption', unknown: 'Status unknown' };
+  const WORD = { up: 'Operational', degraded: 'Degraded', down: 'Down', unknown: 'No data' };
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  async function load() {
+    let d;
+    try { d = await (await fetch('/api/public-status')).json(); }
+    catch { document.getElementById('content').innerHTML = '<p class="sub">Status is temporarily unavailable.</p>'; return; }
+    const o = d.overall;
+    document.getElementById('content').innerHTML = `
+      <div class="banner ${o}"><span class="dot"></span><div><div class="bt">${LABEL[o]}</div>
+        <div class="bs">${d.projects.length} service group${d.projects.length === 1 ? '' : 's'} monitored</div></div></div>
+      ${d.projects.map((p) => `
+        <div class="proj"><div class="proj-head"><span class="sdot ${p.status}"></span><span class="pn">${esc(p.name)}</span>
+          <span style="margin-left:auto" class="pill ${p.status}">${WORD[p.status]}</span></div>
+          ${p.categories.map((c) => `${p.categories.length > 1 ? `<div class="cat-label">${esc(c.name)}</div>` : ''}
+            ${c.targets.map((t) => `<div class="row"><span class="sdot ${t.status}"></span>
+              <span class="rn">${esc(t.name)}${t.summary ? ` <span class="rs">— ${esc(t.summary)}</span>` : ''}</span>
+              <span class="pill ${t.status}">${WORD[t.status]}</span></div>`).join('')}`).join('')}
+        </div>`).join('')}`;
+    document.getElementById('foot').textContent = 'Last updated ' + new Date(d.generatedAt).toLocaleTimeString();
+  }
+  load();
+  setInterval(load, 30000);
+</script>
+</body>
+</html>

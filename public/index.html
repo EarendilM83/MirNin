@@ -23,6 +23,7 @@
         <option value="simulated">Simulated (demo)</option>
       </select>
     </div>
+    <a class="ghost btn-link" href="/status.html" target="_blank" rel="noopener">Status page</a>
     <a class="ghost btn-link" href="/docs.html">Docs</a>
     <button class="ghost" id="btn-settings">Settings</button>
     <button class="primary" id="btn-add">+ Add URL</button>
@@ -89,6 +90,12 @@
         <label class="field">
           <span>Tracking params that must survive <em class="hint-inline">comma-separated, optional</em></span>
           <input name="expectParams" maxlength="200" placeholder="utm_source, cid">
+        </label>
+      </div>
+      <div id="crawl-fields" hidden>
+        <label class="field">
+          <span>Max pages to crawl <em class="hint-inline">follows internal links from the start URL; 1–40</em></span>
+          <input name="maxPages" type="number" min="1" max="40" placeholder="20">
         </label>
       </div>
       <label class="field">

@@ -563,7 +563,7 @@ footer {
 .runway .rw-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
 .runway .rw-days { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
 .runway .rw-days.deg { color: var(--warn-text); } .runway .rw-days.down { color: var(--crit-text); }
-.runway .rw-unit { color: var(--muted); font-size: 13px; }
+.runway .rw-unit, .rw-head .rw-unit { color: var(--muted); font-size: 13px; margin-left: 6px; }
 .runway .rw-track { height: 12px; border-radius: 6px; background: var(--grid-line); overflow: hidden; position: relative; }
 .runway .rw-fill { height: 100%; border-radius: 6px; background: var(--good); }
 .runway .rw-fill.deg { background: var(--warn); } .runway .rw-fill.down { background: var(--crit); }
