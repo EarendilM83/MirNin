@@ -809,6 +809,83 @@
     }
   }, 1000);
 
+  // ---------- reusable rules editor (target / project / category) ------------
+
+  const globalEffectiveRules = () => ({
+    ...state.data.defaultRules,
+    ...Object.fromEntries(Object.entries(state.data.settings.rules ?? {}).filter(([, v]) => v != null)),
+  });
+
+  function rulesEditorHTML(pfx, includePreview) {
+    return `
+    <details class="rules-acc" id="${pfx}-acc">
+      <summary>Status rules <span class="hint-inline" id="${pfx}-note">— using defaults</span></summary>
+      <p class="rules-help">Leave a field empty to inherit the value shown in gray. Filled fields override for everything under this level.</p>
+      <div class="field-row">
+        <label class="field"><span>Passed when HTTP status is</span><input id="${pfx}-passedCodes"></label>
+        <label class="field"><span>Degraded when HTTP status is</span><input id="${pfx}-degradedCodes"></label>
+      </div>
+      <label class="field check-field"><span class="check-line"><input type="checkbox" id="${pfx}-treat403"> Treat 403 as reachable <em class="hint-inline">our WAF blocks monitoring probes</em></span></label>
+      <div class="field-row">
+        <label class="field"><span>Latency mode</span><select id="${pfx}-latencyMode"><option value="">inherit</option><option value="fixed">Fixed value</option><option value="adaptive">Adaptive (× baseline)</option></select></label>
+        <label class="field"><span>Fixed threshold (ms)</span><input id="${pfx}-latencyMs" type="number" min="100" max="60000"></label>
+        <label class="field"><span>Adaptive factor (×)</span><input id="${pfx}-adaptiveFactor" type="number" min="1.5" max="20" step="0.5"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Timeout (ms)</span><input id="${pfx}-timeoutMs" type="number" min="1000" max="60000"></label>
+        <label class="field"><span>Missing expected content means</span><select id="${pfx}-contentFail"><option value="">inherit</option><option value="down">Down</option><option value="degraded">Degraded</option><option value="ignore">Ignore</option></select></label>
+      </div>
+      ${includePreview ? `<div class="report-actions"><button type="button" class="ghost" id="${pfx}-preview">Preview against last 24 h</button><span class="test-result" id="${pfx}-preview-out"></span></div>` : ''}
+    </details>`;
+  }
+
+  function fillRulesEditor(pfx, inherited, own) {
+    const g = (k) => document.getElementById(`${pfx}-${k}`);
+    g('passedCodes').value = own.passedCodes ?? ''; g('passedCodes').placeholder = inherited.passedCodes;
+    g('degradedCodes').value = own.degradedCodes ?? ''; g('degradedCodes').placeholder = inherited.degradedCodes;
+    g('treat403').checked = own.treat403 ?? inherited.treat403; g('treat403').dataset.inherited = String(inherited.treat403);
+    g('latencyMode').value = own.latencyMode ?? '';
+    g('latencyMs').value = own.latencyMs ?? ''; g('latencyMs').placeholder = inherited.latencyMs;
+    g('adaptiveFactor').value = own.adaptiveFactor ?? ''; g('adaptiveFactor').placeholder = inherited.adaptiveFactor;
+    g('timeoutMs').value = own.timeoutMs ?? ''; g('timeoutMs').placeholder = inherited.timeoutMs;
+    g('contentFail').value = own.contentFail ?? '';
+    const custom = Object.keys(own).length;
+    const note = document.getElementById(`${pfx}-note`);
+    note.textContent = custom ? `— ${custom} custom` : '— using defaults';
+    note.className = custom ? 'hint-inline rules-note-custom' : 'hint-inline';
+    document.getElementById(`${pfx}-acc`).open = custom > 0;
+  }
+
+  function collectRulesFrom(pfx) {
+    const g = (k) => document.getElementById(`${pfx}-${k}`);
+    const draft = {};
+    const setIf = (k, v) => { draft[k] = (v === '' || v == null) ? null : v; };
+    setIf('passedCodes', g('passedCodes').value.trim());
+    setIf('degradedCodes', g('degradedCodes').value.trim());
+    draft.treat403 = g('treat403').checked === (g('treat403').dataset.inherited === 'true') ? null : g('treat403').checked;
+    setIf('latencyMode', g('latencyMode').value);
+    setIf('latencyMs', g('latencyMs').value === '' ? null : Number(g('latencyMs').value));
+    setIf('adaptiveFactor', g('adaptiveFactor').value === '' ? null : Number(g('adaptiveFactor').value));
+    setIf('timeoutMs', g('timeoutMs').value === '' ? null : Number(g('timeoutMs').value));
+    setIf('contentFail', g('contentFail').value);
+    return draft;
+  }
+
+  async function runRulesPreview(pfx, scopeBody) {
+    const out = document.getElementById(`${pfx}-preview-out`);
+    if (!out) return;
+    out.textContent = 'computing…'; out.className = 'test-result';
+    const res = await fetch('/api/rules-preview', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...scopeBody, rules: collectRulesFrom(pfx) }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); out.textContent = (e.errors ?? ['preview failed']).join(', '); out.className = 'test-result fail'; return; }
+    const { current, withDraft } = await res.json();
+    const fmt = (c) => c.total === 0 ? 'no checks yet' : `${Math.round(100 * c.up / c.total)}% ok · ${Math.round(100 * c.degraded / c.total)}% degraded · ${Math.round(100 * c.down / c.total)}% down`;
+    out.textContent = `last 24 h — now: ${fmt(current)} → with these rules: ${fmt(withDraft)}`;
+    out.className = 'test-result ok';
+  }
+
   // ---------- target modal ---------------------------------------------------
 
   function openTargetModal(target, presetCategoryId) {
@@ -974,6 +1051,9 @@
     $('#project-error').hidden = true;
     $('#project-form').name.value = project?.name ?? '';
     $('#project-form').webhookUrl.value = project?.webhookUrl ?? '';
+    $('#project-rules-slot').innerHTML = rulesEditorHTML('proj-rules', Boolean(project));
+    fillRulesEditor('proj-rules', project?.inheritedRules ?? globalEffectiveRules(), project?.rules ?? {});
+    if (project) $('#proj-rules-preview').onclick = () => runRulesPreview('proj-rules', { projectId: project.id });
     $('#project-overlay').hidden = false;
     $('#project-form').name.focus();
   }
@@ -981,10 +1061,22 @@
   function openCategoryModal(category, projectId) {
     editingCategory = category;
     categoryProjectId = projectId ?? category?.projectId;
-    $('#category-title').textContent = category ? 'Rename category' : 'New category';
+    $('#category-title').textContent = category ? 'Category settings' : 'New category';
     $('#btn-category-delete').hidden = !category;
     $('#category-error').hidden = true;
+    $('#category-reassign').hidden = true;
     $('#category-form').name.value = category?.name ?? '';
+    // move-to-project select (editing only)
+    $('#category-move-field').hidden = !category;
+    if (category) {
+      $('#category-project').innerHTML = projects().map((p) =>
+        `<option value="${p.id}" ${p.id === category.projectId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+    }
+    $('#category-rules-slot').innerHTML = category ? rulesEditorHTML('cat-rules', true) : '';
+    if (category) {
+      fillRulesEditor('cat-rules', category.inheritedRules ?? globalEffectiveRules(), category.rules ?? {});
+      $('#cat-rules-preview').onclick = () => runRulesPreview('cat-rules', { categoryId: category.id });
+    }
     $('#category-overlay').hidden = false;
     $('#category-form').name.focus();
   }
@@ -1219,7 +1311,7 @@
   $('#project-form').onsubmit = async (ev) => {
     ev.preventDefault();
     const form = $('#project-form');
-    const body = { name: form.name.value, webhookUrl: form.webhookUrl.value };
+    const body = { name: form.name.value, webhookUrl: form.webhookUrl.value, rules: collectRulesFrom('proj-rules') };
     const saved = editingProject
       ? await apiCall(`/api/projects/${editingProject.id}`, 'PUT', body, $('#project-error'))
       : await apiCall('/api/projects', 'POST', body, $('#project-error'));
@@ -1230,8 +1322,13 @@
   };
   $('#btn-project-delete').onclick = async () => {
     if (!editingProject) return;
-    if (!confirm(`Delete project "${editingProject.name}"? (must be empty)`)) return;
-    const ok = await apiCall(`/api/projects/${editingProject.id}`, 'DELETE', null, $('#project-error'));
+    const inProj = state.data.targets.filter((t) => projectOfTarget(t)?.id === editingProject.id);
+    let qs = '';
+    if (inProj.length > 0) {
+      if (!confirm(`Project "${editingProject.name}" has ${inProj.length} URL${inProj.length > 1 ? 's' : ''}. Delete the project AND all its URLs and history?`)) return;
+      qs = '?cascade=1';
+    } else if (!confirm(`Delete project "${editingProject.name}"?`)) return;
+    const ok = await apiCall(`/api/projects/${editingProject.id}${qs}`, 'DELETE', null, $('#project-error'));
     if (!ok) return;
     $('#project-overlay').hidden = true;
     setNav({ scope: 'all' });
@@ -1243,16 +1340,42 @@
   $('#category-form').onsubmit = async (ev) => {
     ev.preventDefault();
     const name = $('#category-form').name.value;
+    const body = editingCategory
+      ? { name, projectId: $('#category-project').value, rules: collectRulesFrom('cat-rules') }
+      : { name, projectId: categoryProjectId };
     const saved = editingCategory
-      ? await apiCall(`/api/categories/${editingCategory.id}`, 'PUT', { name }, $('#category-error'))
-      : await apiCall('/api/categories', 'POST', { name, projectId: categoryProjectId }, $('#category-error'));
+      ? await apiCall(`/api/categories/${editingCategory.id}`, 'PUT', body, $('#category-error'))
+      : await apiCall('/api/categories', 'POST', body, $('#category-error'));
     if (!saved) return;
     $('#category-overlay').hidden = true;
     await refresh();
   };
   $('#btn-category-delete').onclick = async () => {
     if (!editingCategory) return;
-    const ok = await apiCall(`/api/categories/${editingCategory.id}`, 'DELETE', null, $('#category-error'));
+    const inCat = state.data.targets.filter((t) => t.categoryId === editingCategory.id);
+    if (inCat.length === 0) {
+      if (!confirm(`Delete category "${editingCategory.name}"?`)) return;
+      const ok = await apiCall(`/api/categories/${editingCategory.id}`, 'DELETE', null, $('#category-error'));
+      if (!ok) return;
+      $('#category-overlay').hidden = true;
+      await refresh();
+      return;
+    }
+    const box = $('#category-reassign');
+    if (box.hidden) {
+      $('#category-reassign-note').textContent =
+        `“${editingCategory.name}” has ${inCat.length} URL${inCat.length > 1 ? 's' : ''}. Choose where they go, then press Delete again.`;
+      const others = state.data.categories.filter((c) => c.id !== editingCategory.id);
+      $('#category-reassign-to').innerHTML = others.map((c) =>
+        `<option value="${c.id}">${esc(projectById(c.projectId)?.name ?? '')} / ${esc(c.name)}</option>`).join('')
+        + '<option value="__cascade__">⚠ Delete these URLs and their history</option>';
+      box.hidden = false;
+      return;
+    }
+    const choice = $('#category-reassign-to').value;
+    if (choice === '__cascade__' && !confirm('Permanently delete these URLs and all their history?')) return;
+    const qs = choice === '__cascade__' ? 'cascade=1' : `reassignTo=${encodeURIComponent(choice)}`;
+    const ok = await apiCall(`/api/categories/${editingCategory.id}?${qs}`, 'DELETE', null, $('#category-error'));
     if (!ok) return;
     $('#category-overlay').hidden = true;
     await refresh();

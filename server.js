@@ -163,8 +163,15 @@ function stateSnapshot() {
     countries: COUNTRIES,
     authEnabled: AUTH_ENABLED,
     defaultRules: DEFAULT_RULES,
-    projects: store.config.projects,
-    categories: store.config.categories,
+    // a project inherits from global; a category from global + its project
+    projects: store.config.projects.map((p) => ({
+      ...p, inheritedRules: effectiveRules(store.config.settings.rules),
+    })),
+    categories: store.config.categories.map((c) => ({
+      ...c,
+      inheritedRules: effectiveRules(store.config.settings.rules,
+        store.config.projects.find((p) => p.id === c.projectId)?.rules),
+    })),
     settings: {
       ...s,
       // never echo the full token back to the browser
@@ -311,7 +318,14 @@ async function handleApi(req, res, url) {
     if (!name || name.length > 60) return json(res, 400, { errors: ['project name is required (max 60 chars)'] });
     const webhookUrl = String(body.webhookUrl ?? '').trim();
     if (webhookUrl && !/^https?:\/\//.test(webhookUrl)) return json(res, 400, { errors: ['webhook URL must start with http(s)://'] });
-    const project = { id: randomUUID(), name, webhookUrl: webhookUrl || null, rules: null };
+    let rules = null;
+    if (body.rules !== undefined) {
+      const r = validateRules(body.rules ?? {});
+      if (r.errors.length) return json(res, 400, { errors: r.errors });
+      const cleaned = Object.fromEntries(Object.entries(r.out).filter(([, v]) => v !== null));
+      rules = Object.keys(cleaned).length ? cleaned : null;
+    }
+    const project = { id: randomUUID(), name, webhookUrl: webhookUrl || null, rules };
     store.config.projects.push(project);
     store.config.categories.push({ id: randomUUID(), projectId: project.id, name: 'General', rules: null });
     store.saveConfig();
@@ -334,18 +348,32 @@ async function handleApi(req, res, url) {
         if (u && !/^https?:\/\//.test(u)) return json(res, 400, { errors: ['webhook URL must start with http(s)://'] });
         project.webhookUrl = u || null;
       }
+      if (body.rules !== undefined) {
+        const r = validateRules(body.rules ?? {});
+        if (r.errors.length) return json(res, 400, { errors: r.errors });
+        const cleaned = Object.fromEntries(Object.entries(r.out).filter(([, v]) => v !== null));
+        project.rules = Object.keys(cleaned).length ? cleaned : null;
+        reclassify(store.targetIdsForScope(project.id, null));
+      }
       store.saveConfig();
       broadcast('config', {});
       return json(res, 200, project);
     }
     if (req.method === 'DELETE') {
-      if (store.targetIdsForScope(project.id, null).size > 0) {
-        return json(res, 400, { errors: ['project still contains URLs — move or delete them first'] });
-      }
       if (store.config.projects.length === 1) return json(res, 400, { errors: ['the last project cannot be deleted'] });
+      const targetIds = store.targetIdsForScope(project.id, null);
+      const cascade = url.searchParams.get('cascade') === '1';
+      if (targetIds.size > 0 && !cascade) {
+        return json(res, 400, { errors: ['project still contains URLs — delete with confirmation, or move them first'] });
+      }
+      if (cascade) {
+        for (const id of targetIds) store.removeTarget(id);
+        store.config.targets = store.config.targets.filter((t) => !targetIds.has(t.id));
+      }
       store.config.projects = store.config.projects.filter((p) => p.id !== project.id);
       store.config.categories = store.config.categories.filter((c) => c.projectId !== project.id);
       store.saveConfig();
+      scheduler.sync();
       broadcast('config', {});
       return json(res, 200, { ok: true });
     }
@@ -367,44 +395,96 @@ async function handleApi(req, res, url) {
     if (!category) return json(res, 404, { errors: ['category not found'] });
     if (req.method === 'PUT') {
       const body = await readBody(req);
-      const name = String(body.name ?? '').trim();
-      if (!name || name.length > 60) return json(res, 400, { errors: ['category name is required (max 60 chars)'] });
-      category.name = name;
+      if (body.name !== undefined) {
+        const name = String(body.name ?? '').trim();
+        if (!name || name.length > 60) return json(res, 400, { errors: ['category name is required (max 60 chars)'] });
+        category.name = name;
+      }
+      if (body.projectId !== undefined && body.projectId !== category.projectId) {
+        if (!store.config.projects.some((p) => p.id === body.projectId)) return json(res, 400, { errors: ['unknown project'] });
+        category.projectId = body.projectId; // its targets move with it (they reference the category)
+      }
+      if (body.rules !== undefined) {
+        const r = validateRules(body.rules ?? {});
+        if (r.errors.length) return json(res, 400, { errors: r.errors });
+        const cleaned = Object.fromEntries(Object.entries(r.out).filter(([, v]) => v !== null));
+        category.rules = Object.keys(cleaned).length ? cleaned : null;
+      }
       store.saveConfig();
+      reclassify(store.targetIdsForScope(null, category.id));
       broadcast('config', {});
       return json(res, 200, category);
     }
     if (req.method === 'DELETE') {
-      if (store.config.targets.some((t) => t.categoryId === category.id)) {
-        return json(res, 400, { errors: ['category still contains URLs — move or delete them first'] });
+      const inCat = store.config.targets.filter((t) => t.categoryId === category.id);
+      const reassignTo = url.searchParams.get('reassignTo');
+      const cascade = url.searchParams.get('cascade') === '1';
+      if (inCat.length > 0) {
+        if (reassignTo) {
+          const dest = store.config.categories.find((c) => c.id === reassignTo && c.id !== category.id);
+          if (!dest) return json(res, 400, { errors: ['reassignTo must be another existing category'] });
+          const moved = inCat.map((t) => t.id);
+          for (const t of inCat) t.categoryId = dest.id;
+          reclassify(new Set(moved)); // effective rules may differ under the new category/project
+        } else if (cascade) {
+          const ids = inCat.map((t) => t.id);
+          for (const id of ids) store.removeTarget(id);
+          store.config.targets = store.config.targets.filter((t) => !ids.includes(t.id));
+        } else {
+          return json(res, 400, { errors: ['category still contains URLs — reassign or delete them first'] });
+        }
       }
+      // keep at least one category per project
+      const siblings = store.config.categories.filter((c) => c.projectId === category.projectId && c.id !== category.id);
+      if (siblings.length === 0) return json(res, 400, { errors: ['a project must keep at least one category'] });
       store.config.categories = store.config.categories.filter((c) => c.id !== category.id);
       store.saveConfig();
+      scheduler.sync();
       broadcast('config', {});
       return json(res, 200, { ok: true });
     }
   }
 
   // ---- rules preview: reclassify the last 24h under a draft policy ----
+  // Accepts { targetId | projectId | categoryId, rules } — the draft replaces
+  // that level's layer and every affected target's checks are re-counted.
   if (req.method === 'POST' && path === '/api/rules-preview') {
     const body = await readBody(req);
-    const target = store.config.targets.find((t) => t.id === body.targetId);
-    if (!target) return json(res, 404, { errors: ['target not found'] });
     const draft = validateRules(body.rules ?? {});
     if (draft.errors.length) return json(res, 400, { errors: draft.errors });
     const draftLayer = Object.fromEntries(Object.entries(draft.out).filter(([, v]) => v !== null));
-    const cat = store.categoryOf(target);
-    const proj = store.projectOf(target);
-    const proposed = effectiveRules(store.config.settings.rules, proj?.rules, cat?.rules, draftLayer);
+
+    let affected;
+    let rulesFor;
+    if (body.targetId) {
+      const target = store.config.targets.find((t) => t.id === body.targetId);
+      if (!target) return json(res, 404, { errors: ['target not found'] });
+      affected = [target];
+      rulesFor = () => effectiveRules(store.config.settings.rules, store.projectOf(target)?.rules, store.categoryOf(target)?.rules, draftLayer);
+    } else if (body.projectId) {
+      if (!store.config.projects.some((p) => p.id === body.projectId)) return json(res, 404, { errors: ['project not found'] });
+      const ids = store.targetIdsForScope(body.projectId, null);
+      affected = store.config.targets.filter((t) => ids.has(t.id));
+      rulesFor = (t) => effectiveRules(store.config.settings.rules, draftLayer, store.categoryOf(t)?.rules, t.rules);
+    } else if (body.categoryId) {
+      if (!store.config.categories.some((c) => c.id === body.categoryId)) return json(res, 404, { errors: ['category not found'] });
+      const ids = store.targetIdsForScope(null, body.categoryId);
+      affected = store.config.targets.filter((t) => ids.has(t.id));
+      rulesFor = (t) => effectiveRules(store.config.settings.rules, store.projectOf(t)?.rules, draftLayer, t.rules);
+    } else return json(res, 400, { errors: ['need targetId, projectId, or categoryId'] });
+
     const cutoff = Date.now() - DAY;
     const count = () => ({ up: 0, degraded: 0, down: 0, unknown: 0, total: 0 });
     const current = count(), withDraft = count();
-    for (const [key, list] of Object.entries(store.results[target.id] ?? {})) {
-      const baseline = store.baseline7d(target.id, key);
-      for (const e of list) {
-        if (e.t < cutoff) continue;
-        current[e.status]++; current.total++;
-        withDraft[classifyWith(outcomeOf(e), proposed, baseline)]++; withDraft.total++;
+    for (const target of affected) {
+      const proposed = rulesFor(target);
+      for (const [key, list] of Object.entries(store.results[target.id] ?? {})) {
+        const baseline = store.baseline7d(target.id, key);
+        for (const e of list) {
+          if (e.t < cutoff) continue;
+          current[e.status]++; current.total++;
+          withDraft[classifyWith(outcomeOf(e), proposed, baseline)]++; withDraft.total++;
+        }
       }
     }
     return json(res, 200, { current, withDraft });

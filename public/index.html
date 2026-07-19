@@ -208,6 +208,7 @@
         <span>Alert webhook <em class="hint-inline">optional — overrides the global webhook for this project's alerts</em></span>
         <input name="webhookUrl" maxlength="500" placeholder="https://hooks.slack.com/services/…">
       </label>
+      <div id="project-rules-slot"></div>
       <p class="form-error" id="project-error" hidden></p>
       <div class="modal-actions">
         <button type="button" class="danger" id="btn-project-delete" hidden>Delete</button>
@@ -222,7 +223,16 @@
   <div class="overlay" id="category-overlay" hidden>
     <form class="modal" id="category-form" role="dialog" aria-modal="true" aria-labelledby="category-title">
       <h2 id="category-title">New category</h2>
-      <label class="field"><span>Name</span><input name="name" maxlength="60" placeholder="Payments" required></label>
+      <div class="field-row">
+        <label class="field"><span>Name</span><input name="name" maxlength="60" placeholder="Payments" required></label>
+        <label class="field" id="category-move-field" hidden><span>Project <em class="hint-inline">moving takes its URLs along</em></span><select name="projectId" id="category-project"></select></label>
+      </div>
+      <div id="category-rules-slot"></div>
+      <div class="reassign-box" id="category-reassign" hidden>
+        <p class="rules-help" id="category-reassign-note"></p>
+        <label class="field"><span>Move its URLs to</span>
+          <select id="category-reassign-to"></select></label>
+      </div>
       <p class="form-error" id="category-error" hidden></p>
       <div class="modal-actions">
         <button type="button" class="danger" id="btn-category-delete" hidden>Delete</button>
