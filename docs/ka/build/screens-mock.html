@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="ka"><head><meta charset="utf-8">
+<style>
+:root{
+  --page:#0e1116; --surface:#161b22; --surface2:#1c232d; --line:#2a323d;
+  --ink:#e8edf3; --muted:#98a2b0; --accent:#3987e5; --accent2:#6f5cf0;
+  --good:#2fbf6b; --good-bg:rgba(47,191,107,.14);
+  --warn:#f0b429; --warn-bg:rgba(240,180,41,.14);
+  --crit:#e5484d; --crit-bg:rgba(229,72,77,.14);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans Georgian','DejaVu Sans',sans-serif;background:#05070a;color:var(--ink)}
+.screen{width:1180px;background:var(--page);overflow:hidden;margin:0 auto}
+.frame{border:1px solid var(--line)}
+/* ---- shell ---- */
+.app{display:flex;min-height:720px}
+.side{width:250px;background:var(--surface);border-right:1px solid var(--line);padding:20px 14px;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 20px;font-weight:800;font-size:19px;letter-spacing:.2px}
+.logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:16px}
+.navlbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;padding:14px 10px 6px}
+.nav{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;color:var(--muted);font-size:14.5px;font-weight:600;margin-bottom:2px}
+.nav .ic{width:19px;text-align:center;font-size:16px}
+.nav.on{background:var(--accent);color:#fff}
+.nav.on2{background:var(--surface2);color:var(--ink)}
+.main{flex:1;padding:26px 30px;min-width:0}
+.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.h1{font-size:24px;font-weight:800}
+.sub{color:var(--muted);font-size:13.5px;margin-top:3px}
+.who{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:30px;padding:5px 6px 5px 14px;font-size:13px}
+.who b{font-weight:700}
+.who .role{color:var(--muted);font-size:11.5px}
+.av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#f0b429,#e5484d);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:13px}
+/* cards */
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.card .k{color:var(--muted);font-size:12.5px;font-weight:600}
+.card .v{font-size:29px;font-weight:800;margin-top:8px}
+.card .d{font-size:12px;margin-top:6px;font-weight:600}
+.up{color:var(--good)} .dn{color:var(--crit)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.ph{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.ph b{font-size:15.5px;font-weight:700}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:700;font-family:inherit}
+.btn.ghost{background:var(--surface2);color:var(--ink);border:1px solid var(--line)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:12px 18px;border-bottom:1px solid var(--line);font-weight:700}
+td{padding:14px 18px;border-bottom:1px solid var(--line);font-size:14px}
+tr:last-child td{border-bottom:none}
+.pill{display:inline-block;padding:4px 11px;border-radius:20px;font-size:12px;font-weight:700}
+.p-good{background:var(--good-bg);color:var(--good)}
+.p-warn{background:var(--warn-bg);color:var(--warn)}
+.p-crit{background:var(--crit-bg);color:var(--crit)}
+.p-info{background:rgba(57,135,229,.14);color:var(--accent)}
+.mut{color:var(--muted)}
+.bar{height:8px;border-radius:6px;background:var(--surface2);overflow:hidden;margin-top:7px}
+.bar>i{display:block;height:100%;border-radius:6px;background:var(--accent)}
+</style></head>
+<body>
+
+<!-- ============ SCREEN 1: ADMIN DASHBOARD ============ -->
+<div class="screen frame" id="s1">
+ <div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo">◆</span> EduCore LMS</div>
+    <div class="navlbl">მართვა</div>
+    <div class="nav on"><span class="ic">▦</span> მთავარი პანელი</div>
+    <div class="nav"><span class="ic">🎓</span> პროგრამები</div>
+    <div class="nav"><span class="ic">📐</span> შეფასების მოდელები</div>
+    <div class="nav"><span class="ic">🗂</span> კატეგორიები</div>
+    <div class="nav"><span class="ic">📚</span> კურსები</div>
+    <div class="navlbl">ხალხი</div>
+    <div class="nav"><span class="ic">👥</span> მომხმარებლები და როლები</div>
+    <div class="nav"><span class="ic">🧑‍🏫</span> მასწავლებლები</div>
+    <div class="nav"><span class="ic">🎒</span> სტუდენტები</div>
+    <div class="navlbl">ანალიტიკა</div>
+    <div class="nav"><span class="ic">📊</span> ანგარიშები</div>
+    <div class="nav"><span class="ic">🛡</span> აკად. კეთილსინდისიერება</div>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div><div class="h1">მთავარი პანელი</div><div class="sub">2025–2026 სასწავლო წელი · შემოდგომის სემესტრი</div></div>
+      <div class="who"><div><b>ნუკრი ტ.</b><div class="role">პროგრამების ხელმძღვანელი</div></div><div class="av">ნტ</div></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">აქტიური პროგრამა</div><div class="v">7</div><div class="d up">▲ 2 ახალი წელს</div></div>
+      <div class="card"><div class="k">სტუდენტი</div><div class="v">1 284</div><div class="d up">▲ 6.4%</div></div>
+      <div class="card"><div class="k">მასწავლებელი</div><div class="v">96</div><div class="d mut">42 პროგრამა-კურსი</div></div>
+      <div class="card"><div class="k">საშ. მოსწრება</div><div class="v">78.3</div><div class="d up">▲ 1.2 ქულა</div></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><b>პროგრამები</b><button class="btn">+ ახალი პროგრამა</button></div>
+      <table>
+        <tr><th>პროგრამა</th><th>კოორდინატორი</th><th>შეფასების მოდელი</th><th>სტუდენტი</th><th>სტატუსი</th></tr>
+        <tr><td><b>ვებ-პროგრამირება</b><div class="mut" style="font-size:12px">6 თვე · 4 კურსი</div></td><td>ლ. ბერიძე</td><td><span class="pill p-info">სტანდარტული 100</span></td><td>212</td><td><span class="pill p-good">აქტიური</span></td></tr>
+        <tr><td><b>მონაცემთა ანალიტიკა</b><div class="mut" style="font-size:12px">8 თვე · 5 კურსი</div></td><td>თ. ჩხაიძე</td><td><span class="pill p-info">პროექტზე ორიენტ.</span></td><td>168</td><td><span class="pill p-good">აქტიური</span></td></tr>
+        <tr><td><b>UX/UI დიზაინი</b><div class="mut" style="font-size:12px">5 თვე · 3 კურსი</div></td><td>ნ. კაპანაძე</td><td><span class="pill p-info">პორტფოლიო</span></td><td>134</td><td><span class="pill p-good">აქტიური</span></td></tr>
+        <tr><td><b>ციფრული მარკეტინგი</b><div class="mut" style="font-size:12px">4 თვე · 4 კურსი</div></td><td>გ. მაისურაძე</td><td><span class="pill p-info">სტანდარტული 100</span></td><td>190</td><td><span class="pill p-warn">მიმდინარე რეგისტრ.</span></td></tr>
+        <tr><td><b>QA / ტესტირება</b><div class="mut" style="font-size:12px">4 თვე · 3 კურსი</div></td><td>ს. გელაშვილი</td><td><span class="pill p-info">სტანდარტული 100</span></td><td>142</td><td><span class="pill p-good">აქტიური</span></td></tr>
+      </table>
+    </div>
+  </main>
+ </div>
+</div>
+
+<!-- ============ SCREEN 2: EVALUATION MODEL BUILDER ============ -->
+<div class="screen frame" id="s2" style="margin-top:40px">
+ <div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo">◆</span> EduCore LMS</div>
+    <div class="navlbl">მართვა</div>
+    <div class="nav"><span class="ic">▦</span> მთავარი პანელი</div>
+    <div class="nav"><span class="ic">🎓</span> პროგრამები</div>
+    <div class="nav on"><span class="ic">📐</span> შეფასების მოდელები</div>
+    <div class="nav"><span class="ic">🗂</span> კატეგორიები</div>
+    <div class="nav"><span class="ic">📚</span> კურსები</div>
+    <div class="navlbl">ხალხი</div>
+    <div class="nav"><span class="ic">👥</span> მომხმარებლები და როლები</div>
+    <div class="nav"><span class="ic">📊</span> ანგარიშები</div>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div><div class="h1">შეფასების მოდელი — „სტანდარტული 100“</div><div class="sub">მიბმულია პროგრამაზე: ვებ-პროგრამირება · 4 კურსი</div></div>
+      <button class="btn">💾 შენახვა</button>
+    </div>
+    <div class="panel" style="margin-bottom:18px">
+      <div class="ph"><b>კატეგორიები და წონები</b><span class="pill p-good">ჯამი = 100 ქულა ✓</span></div>
+      <table>
+        <tr><th>კატეგორია</th><th>ტიპი</th><th style="width:230px">წონა</th><th>მინ. ბარიერი</th><th>ქულა</th></tr>
+        <tr><td><b>აქტივობა და დასწრება</b></td><td><span class="mut">უწყვეტი</span></td><td><div class="bar"><i style="width:10%"></i></div></td><td>—</td><td><b>10</b></td></tr>
+        <tr><td><b>ქვიზები (ონლაინ)</b></td><td><span class="mut">ავტომატური</span></td><td><div class="bar"><i style="width:20%"></i></div></td><td>50%</td><td><b>20</b></td></tr>
+        <tr><td><b>პრაქტიკული დავალებები</b></td><td><span class="mut">ხელით</span></td><td><div class="bar"><i style="width:20%"></i></div></td><td>—</td><td><b>20</b></td></tr>
+        <tr><td><b>შუალედური გამოცდა</b></td><td><span class="mut">ონლაინ · მეთვალყურეობით</span></td><td><div class="bar"><i style="width:20%"></i></div></td><td>50%</td><td><b>20</b></td></tr>
+        <tr><td><b>დასკვნითი გამოცდა</b></td><td><span class="mut">ონლაინ · მეთვალყურეობით</span></td><td><div class="bar"><i style="width:30%"></i></div></td><td>60%</td><td><b>30</b></td></tr>
+      </table>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="panel"><div class="ph"><b>ჩათვლის პირობა</b></div>
+        <div style="padding:16px 18px;font-size:14px;line-height:2">
+          • დადებითი ზღვარი: <b>≥ 51 ქულა</b><br>
+          • დასკვნითის მინიმუმი: <b>≥ 60%</b><br>
+          • დასწრების მინიმუმი: <b>≥ 75%</b></div></div>
+      <div class="panel"><div class="ph"><b>შეფასების შკალა (ECTS)</b></div>
+        <div style="padding:16px 18px;font-size:14px;line-height:1.95">
+          <span class="pill p-good">A</span> 91–100 &nbsp; <span class="pill p-good">B</span> 81–90 &nbsp; <span class="pill p-info">C</span> 71–80<br>
+          <span class="pill p-info">D</span> 61–70 &nbsp; <span class="pill p-warn">E</span> 51–60 &nbsp; <span class="pill p-crit">F/FX</span> ≤ 50</div></div>
+    </div>
+  </main>
+ </div>
+</div>
+
+<!-- ============ SCREEN 3: ROLES & PERMISSIONS ============ -->
+<div class="screen frame" id="s3" style="margin-top:40px">
+ <div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo">◆</span> EduCore LMS</div>
+    <div class="navlbl">ხალხი</div>
+    <div class="nav on"><span class="ic">👥</span> მომხმარებლები და როლები</div>
+    <div class="nav"><span class="ic">🧑‍🏫</span> მასწავლებლები</div>
+    <div class="nav"><span class="ic">🎒</span> სტუდენტები</div>
+    <div class="navlbl">მართვა</div>
+    <div class="nav"><span class="ic">🎓</span> პროგრამები</div>
+    <div class="nav"><span class="ic">📐</span> შეფასების მოდელები</div>
+    <div class="nav"><span class="ic">📊</span> ანგარიშები</div>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div><div class="h1">როლები და უფლებამოსილებები</div><div class="sub">წვდომის მატრიცა · 7 სისტემური როლი</div></div>
+      <button class="btn">+ როლის მინიჭება</button>
+    </div>
+    <div class="panel">
+      <table>
+        <tr><th>როლი</th><th>პროგრ. მართვა</th><th>შეფ. მოდელი</th><th>ნიშნის დაწერა</th><th>მომხმარებ.</th><th>ანგარიშები</th></tr>
+        <tr><td><b>პროგრამების ხელმძღვანელი</b></td><td><span class="pill p-good">სრული</span></td><td><span class="pill p-good">სრული</span></td><td><span class="pill p-info">რედაქტ.</span></td><td><span class="pill p-good">სრული</span></td><td><span class="pill p-good">სრული</span></td></tr>
+        <tr><td><b>ხარისხის კონტროლი</b></td><td><span class="pill p-warn">ნახვა</span></td><td><span class="pill p-warn">ნახვა</span></td><td><span class="pill p-warn">აუდიტი</span></td><td><span class="pill p-warn">ნახვა</span></td><td><span class="pill p-good">სრული</span></td></tr>
+        <tr><td><b>პროგრამის კოორდინატორი</b></td><td><span class="pill p-info">თავისი</span></td><td><span class="pill p-warn">ნახვა</span></td><td><span class="pill p-info">კონტ.</span></td><td><span class="pill p-info">თავისი</span></td><td><span class="pill p-info">თავისი</span></td></tr>
+        <tr><td><b>პროგრამის ხელმძღვანელი</b></td><td><span class="pill p-info">თავისი</span></td><td><span class="pill p-info">დამტკ.</span></td><td><span class="pill p-warn">ნახვა</span></td><td><span class="pill p-warn">ნახვა</span></td><td><span class="pill p-info">თავისი</span></td></tr>
+        <tr><td><b>მასწავლებელი</b></td><td><span class="pill p-crit">—</span></td><td><span class="pill p-crit">—</span></td><td><span class="pill p-good">თავისი კურსი</span></td><td><span class="pill p-crit">—</span></td><td><span class="pill p-info">თავისი</span></td></tr>
+        <tr><td><b>კარიერული კოორდინატორი</b></td><td><span class="pill p-crit">—</span></td><td><span class="pill p-crit">—</span></td><td><span class="pill p-crit">—</span></td><td><span class="pill p-warn">ნახვა</span></td><td><span class="pill p-info">კარიერა</span></td></tr>
+        <tr><td><b>HR</b></td><td><span class="pill p-crit">—</span></td><td><span class="pill p-crit">—</span></td><td><span class="pill p-crit">—</span></td><td><span class="pill p-info">პერსონალი</span></td><td><span class="pill p-info">HR</span></td></tr>
+      </table>
+    </div>
+    <div class="sub" style="margin-top:14px">🔒 ყველა მოქმედება აღირიცხება აუდიტის ჟურნალში — ვინ, რა, როდის.</div>
+  </main>
+ </div>
+</div>
+
+<!-- ============ SCREEN 4: TEACHER APP (gradebook) ============ -->
+<div class="screen frame" id="s4" style="margin-top:40px">
+ <div class="app">
+  <aside class="side" style="width:230px">
+    <div class="brand"><span class="logo">◆</span> EduCore <span style="font-weight:600;font-size:13px;color:var(--muted)">მასწ.</span></div>
+    <div class="nav on2"><span class="ic">📚</span> ჩემი კურსები</div>
+    <div class="nav"><span class="ic">🗓</span> დღის განრიგი</div>
+    <div class="nav"><span class="ic">✅</span> დასწრება</div>
+    <div class="nav"><span class="ic">📝</span> დავალებები</div>
+    <div class="nav"><span class="ic">🧪</span> ქვიზის შექმნა</div>
+    <div class="nav"><span class="ic">📊</span> ჟურნალი</div>
+    <div class="nav"><span class="ic">💬</span> შეტყობინებები</div>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div><div class="h1">JavaScript საფუძვლები · ჯგუფი A</div><div class="sub">ვებ-პროგრამირება · 24 სტუდენტი · მე-6 კვირა</div></div>
+      <div style="display:flex;gap:10px"><button class="btn ghost">📥 ექსპორტი</button><button class="btn">+ ახალი ქვიზი</button></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><b>ელექტრონული ჟურნალი</b><span class="mut" style="font-size:13px">წონები ავტომატურად ითვლება მოდელით „სტანდარტული 100“</span></div>
+      <table>
+        <tr><th>სტუდენტი</th><th>დასწრება</th><th>ქვიზები /20</th><th>დავალ. /20</th><th>შუალ. /20</th><th>მიმდ. ჯამი</th></tr>
+        <tr><td><b>ანა გ.</b></td><td><span class="pill p-good">96%</span></td><td>18</td><td>19</td><td>17</td><td><b>88</b> <span class="pill p-good">A</span></td></tr>
+        <tr><td><b>დავით მ.</b></td><td><span class="pill p-good">88%</span></td><td>15</td><td>16</td><td>14</td><td><b>74</b> <span class="pill p-info">C</span></td></tr>
+        <tr><td><b>ელენე კ.</b></td><td><span class="pill p-warn">72%</span></td><td>12</td><td>13</td><td>—</td><td><b>58</b> <span class="pill p-warn">E</span></td></tr>
+        <tr><td><b>ლუკა ბ.</b></td><td><span class="pill p-good">91%</span></td><td>19</td><td>18</td><td>18</td><td><b>85</b> <span class="pill p-good">B</span></td></tr>
+        <tr><td><b>მარიამ ჯ.</b></td><td><span class="pill p-crit">61%</span></td><td>9</td><td>11</td><td>10</td><td><b>47</b> <span class="pill p-crit">F</span></td></tr>
+      </table>
+    </div>
+    <div class="sub" style="margin-top:14px">ℹ️ ხელით შესწორებული ნიშანი აღინიშნება და საჭიროებს კომენტარს — გამჭვირვალობისთვის.</div>
+  </main>
+ </div>
+</div>
+
+<!-- ============ SCREEN 5: STUDENT MOBILE APP (Duolingo-style) ============ -->
+<div class="screen frame" id="s5" style="margin-top:40px;padding:34px;display:flex;gap:34px;justify-content:center;background:linear-gradient(160deg,#0e1116,#161b22)">
+  <!-- phone 1: home path -->
+  <div style="width:320px;background:var(--surface);border-radius:34px;border:1px solid var(--line);padding:18px 16px;box-shadow:0 20px 50px rgba(0,0,0,.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700">
+      <span>🎓 ჩემი გზა</span>
+      <span style="display:flex;gap:12px"><span style="color:var(--warn)">🔥 24</span><span style="color:var(--accent)">💎 1 850</span></span>
+    </div>
+    <div style="text-align:center;margin:16px 0 8px;color:var(--muted);font-size:12.5px">ვებ-პროგრამირება · მოდული 3</div>
+    <!-- path -->
+    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:6px">
+      <div style="width:64px;height:64px;border-radius:50%;background:var(--good);display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 5px 0 #1f9d55">✓</div>
+      <div style="width:64px;height:64px;border-radius:50%;background:var(--good);display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 5px 0 #1f9d55;margin-left:-70px">✓</div>
+      <div style="width:72px;height:72px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:30px;box-shadow:0 6px 0 #2467b8;border:3px solid #fff">▶</div>
+      <div style="font-size:12px;color:var(--accent);font-weight:800;margin-top:-4px">გაკვეთილი 7 · მასივები</div>
+      <div style="width:60px;height:60px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--muted);margin-left:74px">🔒</div>
+      <div style="width:60px;height:60px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--muted)">🏆</div>
+    </div>
+    <div style="display:flex;justify-content:space-around;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:22px">
+      <span>🏠</span><span style="opacity:.4">📚</span><span style="opacity:.4">🎯</span><span style="opacity:.4">👤</span>
+    </div>
+  </div>
+  <!-- phone 2: lesson question -->
+  <div style="width:320px;background:var(--surface);border-radius:34px;border:1px solid var(--line);padding:18px 16px;box-shadow:0 20px 50px rgba(0,0,0,.5)">
+    <div style="display:flex;align-items:center;gap:10px;font-size:13px">
+      <span style="color:var(--crit)">✕</span>
+      <div class="bar" style="flex:1;margin:0"><i style="width:60%;background:var(--good)"></i></div>
+      <span style="color:var(--crit);font-weight:700">♥ 4</span>
+    </div>
+    <div style="font-weight:800;font-size:17px;margin:22px 4px 14px">რომელი მეთოდი ამატებს ელემენტს მასივის ბოლოში?</div>
+    <div style="display:flex;flex-direction:column;gap:11px;margin-top:6px">
+      <div style="padding:15px;border:2px solid var(--line);border-radius:14px;font-weight:600;font-family:monospace">.shift()</div>
+      <div style="padding:15px;border:2px solid var(--accent);background:rgba(57,135,229,.12);border-radius:14px;font-weight:700;font-family:monospace">.push()</div>
+      <div style="padding:15px;border:2px solid var(--line);border-radius:14px;font-weight:600;font-family:monospace">.pop()</div>
+      <div style="padding:15px;border:2px solid var(--line);border-radius:14px;font-weight:600;font-family:monospace">.slice()</div>
+    </div>
+    <div style="margin-top:20px;background:var(--good);color:#04120a;text-align:center;padding:15px;border-radius:14px;font-weight:800">შემოწმება</div>
+  </div>
+  <!-- phone 3: progress / profile -->
+  <div style="width:320px;background:var(--surface);border-radius:34px;border:1px solid var(--line);padding:18px 16px;box-shadow:0 20px 50px rgba(0,0,0,.5)">
+    <div style="text-align:center;margin-top:6px">
+      <div style="width:76px;height:76px;border-radius:50%;margin:0 auto;background:linear-gradient(135deg,#3987e5,#6f5cf0);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#fff">ან</div>
+      <div style="font-weight:800;font-size:17px;margin-top:10px">ანა გ.</div>
+      <div style="color:var(--muted);font-size:12.5px">ვებ-პროგრამირება · ჯგუფი A</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px">
+      <div style="background:var(--surface2);border-radius:12px;padding:13px;text-align:center"><div style="font-size:22px;font-weight:800;color:var(--warn)">🔥 24</div><div style="font-size:11px;color:var(--muted)">დღის სერია</div></div>
+      <div style="background:var(--surface2);border-radius:12px;padding:13px;text-align:center"><div style="font-size:22px;font-weight:800;color:var(--good)">88</div><div style="font-size:11px;color:var(--muted)">საშ. ქულა</div></div>
+      <div style="background:var(--surface2);border-radius:12px;padding:13px;text-align:center"><div style="font-size:22px;font-weight:800;color:var(--accent)">72%</div><div style="font-size:11px;color:var(--muted)">კურსი დასრ.</div></div>
+      <div style="background:var(--surface2);border-radius:12px;padding:13px;text-align:center"><div style="font-size:22px;font-weight:800">14</div><div style="font-size:11px;color:var(--muted)">ბეიჯი</div></div>
+    </div>
+    <div style="margin-top:16px;font-size:13px;font-weight:700;margin-bottom:8px">მომდევნო შეფასება</div>
+    <div style="background:var(--warn-bg);border:1px solid rgba(240,180,41,.3);border-radius:12px;padding:13px;font-size:12.5px">
+      🧪 <b>ონლაინ ქვიზი — მასივები</b><div style="color:var(--muted);margin-top:4px">ხვალ 18:00 · ხანგრძლ. 20 წთ · მეთვალყურეობით</div></div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 6: ONLINE QUIZ + ANTI-CHEAT ============ -->
+<div class="screen frame" id="s6" style="margin-top:40px;position:relative">
+  <div style="background:var(--crit);color:#fff;padding:10px 22px;font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:10px">
+    🔒 დაცული რეჟიმი (Lockdown) აქტიურია — სრულეკრანი · ჩანართის გადართვა და გასვლა აკრძალულია · ეკრანი აღირიცხება
+  </div>
+  <div style="padding:30px 40px">
+    <div class="top">
+      <div><div class="h1">დასკვნითი ონლაინ ქვიზი — მასივები</div><div class="sub">JavaScript საფუძვლები · კითხვა 4 / 10</div></div>
+      <div style="display:flex;gap:14px;align-items:center">
+        <div style="background:var(--crit-bg);color:var(--crit);font-weight:800;font-size:20px;padding:8px 16px;border-radius:10px">⏱ 08:12</div>
+        <div class="who"><div><b>ანა გ.</b><div class="role">🎥 კამერა · მიკ. ჩართ.</div></div><div class="av">ან</div></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-bottom:18px">
+      <div style="padding:22px 24px">
+        <div style="font-size:18px;font-weight:700;margin-bottom:18px">4. რას დააბრუნებს <code style="font-family:monospace;background:var(--surface2);padding:2px 7px;border-radius:5px">[3,7,2].sort()[0]</code> ?</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="padding:15px 18px;border:2px solid var(--line);border-radius:12px;font-family:monospace">A. 7</div>
+          <div style="padding:15px 18px;border:2px solid var(--accent);background:rgba(57,135,229,.1);border-radius:12px;font-family:monospace;font-weight:700">B. 2</div>
+          <div style="padding:15px 18px;border:2px solid var(--line);border-radius:12px;font-family:monospace">C. 3</div>
+          <div style="padding:15px 18px;border:2px solid var(--line);border-radius:12px;font-family:monospace">D. undefined</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="pill p-warn">⚠ ფოკუსის დაკარგვის გაფრთხილება: 1 / 3</span>
+      <button class="btn">შემდეგი კითხვა →</button>
+    </div>
+  </div>
+  <!-- warning modal overlay -->
+  <div style="position:absolute;inset:0;background:rgba(3,5,8,.72);display:flex;align-items:center;justify-content:center">
+    <div style="width:470px;background:var(--surface);border:1px solid var(--crit);border-radius:18px;padding:28px;text-align:center;box-shadow:0 30px 70px rgba(0,0,0,.6)">
+      <div style="font-size:44px">🚫</div>
+      <div style="font-size:20px;font-weight:800;margin-top:10px;color:var(--crit)">დაფიქსირდა ჩანართის გადართვა</div>
+      <div style="color:var(--muted);font-size:14px;margin-top:12px;line-height:1.7">სისტემამ დააფიქსირა ფანჯრიდან გასვლა / სხვა ჩანართზე გადართვა. მოვლენა აღირიცხა და გადაეგზავნა მეთვალყურეს.<br><b style="color:var(--ink)">კიდევ 2 დარღვევა → ქვიზი ავტომატურად დაიხურება.</b></div>
+      <div style="background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:11px;margin-top:16px;font-size:13px;font-weight:700">📱 პარალელურად აღმოჩენილია მობ. მოწყობილობის აქტივობა — შემოწმდება</div>
+      <button class="btn" style="margin-top:18px;width:100%;padding:13px">გავიგე, გავაგრძელებ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 7: PROCTORING / INTEGRITY DASHBOARD ============ -->
+<div class="screen frame" id="s7" style="margin-top:40px">
+ <div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo">◆</span> EduCore LMS</div>
+    <div class="navlbl">ანალიტიკა</div>
+    <div class="nav"><span class="ic">📊</span> ანგარიშები</div>
+    <div class="nav on"><span class="ic">🛡</span> აკად. კეთილსინდისიერება</div>
+    <div class="navlbl">მართვა</div>
+    <div class="nav"><span class="ic">🎓</span> პროგრამები</div>
+    <div class="nav"><span class="ic">📐</span> შეფასების მოდელები</div>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div><div class="h1">მეთვალყურეობის პანელი</div><div class="sub">დასკვნითი ქვიზი — მასივები · 24 მონაწილე · რეალურ დროში</div></div>
+      <span class="pill p-good">● პირდაპირი</span>
+    </div>
+    <div class="cards" style="grid-template-columns:repeat(4,1fr)">
+      <div class="card"><div class="k">აქტიური ონლაინ</div><div class="v">22</div><div class="d mut">2 დაასრულა</div></div>
+      <div class="card"><div class="k">ჩანართის გადართვა</div><div class="v" style="color:var(--warn)">7</div><div class="d mut">4 სტუდენტთან</div></div>
+      <div class="card"><div class="k">მობ. მოწყ. სიგნალი</div><div class="v" style="color:var(--crit)">2</div><div class="d dn">გადამოწმება</div></div>
+      <div class="card"><div class="k">ავტ. დახურვა</div><div class="v" style="color:var(--crit)">1</div><div class="d dn">3 დარღვევა</div></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><b>მოვლენების ჟურნალი (ცოცხალი)</b><span class="mut" style="font-size:13px">ვებ: ბრაუზერის ჩაშენებული ფუნქციები · მობილური: აპლიკაცია</span></div>
+      <table>
+        <tr><th>დრო</th><th>სტუდენტი</th><th>მოწყობილობა</th><th>მოვლენა</th><th>სტატუსი</th></tr>
+        <tr><td class="mut">18:07:42</td><td><b>მარიამ ჯ.</b></td><td>💻 ვები</td><td>ჩანართის გადართვა (მე-3)</td><td><span class="pill p-crit">ავტ. დახურვა</span></td></tr>
+        <tr><td class="mut">18:06:15</td><td><b>ლუკა ბ.</b></td><td>📱 მობილური</td><td>ეკრანის ჩაწერის მცდელობა</td><td><span class="pill p-crit">დაბლოკილია</span></td></tr>
+        <tr><td class="mut">18:05:03</td><td><b>დავით მ.</b></td><td>💻 ვები</td><td>სრულეკრანიდან გასვლა</td><td><span class="pill p-warn">გაფრთხილება 2/3</span></td></tr>
+        <tr><td class="mut">18:03:51</td><td><b>ნინო ხ.</b></td><td>📱 მობილური</td><td>სხვა აპში გადასვლა</td><td><span class="pill p-warn">გაფრთხილება 1/3</span></td></tr>
+        <tr><td class="mut">18:01:20</td><td><b>ანა გ.</b></td><td>💻 ვები</td><td>დაწყება · იდენტიფიკაცია ✓</td><td><span class="pill p-good">წესრიგშია</span></td></tr>
+      </table>
+    </div>
+  </main>
+ </div>
+</div>
+
+</body></html>
